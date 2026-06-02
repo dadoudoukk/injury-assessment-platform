@@ -1,0 +1,158 @@
+# =============================================================================
+# injury-assessment-platform — 根目录 .gitignore
+# 前端：Geeker-Admin-QianTai (Vue3 + Vite)
+# 后端：backend (Python FastAPI)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 操作系统
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# -----------------------------------------------------------------------------
+# 编辑器 / IDE
+# -----------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.iml
+*.ipr
+*.iws
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# -----------------------------------------------------------------------------
+# 环境变量（保留 .env.example 等示例/模板文件）
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*.env.local
+
+# 保留示例环境文件（勿提交真实密钥）
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.*.sample
+!.env.template
+!.env.*.template
+
+# -----------------------------------------------------------------------------
+# 前端 — Node / Vue / Vite
+# -----------------------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Vite / 构建与缓存
+.vite/
+stats.html
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# 包管理器
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+package-lock.json.bak
+
+# 前端日志
+logs/
+*.log
+
+# -----------------------------------------------------------------------------
+# 后端 — Python / FastAPI
+# -----------------------------------------------------------------------------
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+.virtualenv/
+
+# 字节码与缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+
+# 测试 / 类型检查 / 格式化工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.cache/
+
+# 打包与分发（限定 backend，避免误匹配前端 Geeker-Admin-QianTai/build/ 源码目录）
+backend/*.egg
+backend/*.egg-info/
+backend/.eggs/
+backend/build/
+backend/dist/
+backend/wheels/
+backend/sdist/
+*.egg-info/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 后端用户上传文件（运行时生成）
+backend/uploads/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# pyenv / Python 版本
+.python-version
+
+# -----------------------------------------------------------------------------
+# 数据库 / 本地数据文件（按需取消注释）
+# -----------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+
+# -----------------------------------------------------------------------------
+# 其他
+# -----------------------------------------------------------------------------
+*.bak
+*.tmp
+*.temp
+*.orig
