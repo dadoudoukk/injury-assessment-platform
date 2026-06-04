@@ -7,11 +7,15 @@ export interface CaseRecordRow {
   reportNumber: string;
   victimName: string;
   victimPhone: string;
+  reportDate: string;
+  province: string;
   city: string;
   district: string;
+  accidentType: string;
+  injuryType: string;
+  insuranceCompany: string;
   status: number;
   agencyId?: number | null;
-  insuranceCompanyId?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,17 +26,24 @@ export interface CaseRecordListParams {
   reportNumber?: string;
   victimName?: string;
   status?: number;
+  insuranceCompany?: string;
+  reportDateStart?: string;
+  reportDateEnd?: string;
 }
 
 export interface CaseRecordForm {
   reportNumber: string;
   victimName: string;
   victimPhone: string;
+  reportDate: string;
+  province: string;
   city: string;
   district: string;
+  accidentType: string;
+  injuryType: string;
+  insuranceCompany: string;
   status: number;
   agencyId?: number | null;
-  insuranceCompanyId?: number | null;
 }
 
 export const getCaseRecordList = (params: CaseRecordListParams) => {

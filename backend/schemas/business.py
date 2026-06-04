@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -140,28 +141,39 @@ class CaseRecordListQuery(BaseModel):
     reportNumber: Optional[str] = Field(None, description="出险报案号模糊搜索")
     victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
     status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
+    insuranceCompany: Optional[str] = Field(None, description="所属保险公司（精确匹配，中文名称）")
+    reportDateStart: Optional[date] = Field(None, description="报案日期起（含）")
+    reportDateEnd: Optional[date] = Field(None, description="报案日期止（含）")
 
 
 class CaseRecordCreate(BaseModel):
     reportNumber: str = Field(..., min_length=1, max_length=50, description="出险报案号")
     victimName: str = Field(..., min_length=1, max_length=50, description="伤者姓名")
     victimPhone: str = Field(..., min_length=1, max_length=20, description="联系电话")
+    reportDate: date = Field(..., description="出险/报案日期 YYYY-MM-DD")
+    province: str = Field(..., min_length=1, max_length=50, description="报案省份")
     city: str = Field(..., min_length=1, max_length=50, description="报案城市")
     district: str = Field(..., min_length=1, max_length=50, description="报案区县")
+    accidentType: str = Field(..., min_length=1, max_length=50, description="事故类型")
+    injuryType: str = Field(..., min_length=1, max_length=50, description="伤情类型")
+    insuranceCompany: str = Field(..., min_length=1, max_length=100, description="所属保险公司")
     status: int = Field(1, description="案件状态：1待接单 2鉴定中 3已完成")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID")
-    insuranceCompanyId: Optional[int] = Field(None, description="保险公司ID")
 
 
 class CaseRecordUpdate(BaseModel):
     reportNumber: Optional[str] = Field(None, min_length=1, max_length=50, description="出险报案号")
     victimName: Optional[str] = Field(None, min_length=1, max_length=50, description="伤者姓名")
     victimPhone: Optional[str] = Field(None, min_length=1, max_length=20, description="联系电话")
+    reportDate: Optional[date] = Field(None, description="出险/报案日期 YYYY-MM-DD")
+    province: Optional[str] = Field(None, min_length=1, max_length=50, description="报案省份")
     city: Optional[str] = Field(None, min_length=1, max_length=50, description="报案城市")
     district: Optional[str] = Field(None, min_length=1, max_length=50, description="报案区县")
+    accidentType: Optional[str] = Field(None, min_length=1, max_length=50, description="事故类型")
+    injuryType: Optional[str] = Field(None, min_length=1, max_length=50, description="伤情类型")
+    insuranceCompany: Optional[str] = Field(None, min_length=1, max_length=100, description="所属保险公司")
     status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID")
-    insuranceCompanyId: Optional[int] = Field(None, description="保险公司ID")
 
 
 class CaseRecordOut(BaseModel):
@@ -169,10 +181,65 @@ class CaseRecordOut(BaseModel):
     reportNumber: str
     victimName: str
     victimPhone: str
+    reportDate: str
+    province: str
     city: str
     district: str
+    accidentType: str
+    injuryType: str
+    insuranceCompany: str
     status: int
     agencyId: Optional[int] = None
-    insuranceCompanyId: Optional[int] = None
+    createdAt: str
+    updatedAt: str
+
+
+class AppraisalAgencyListQuery(BaseModel):
+    pageNum: int = Field(1, ge=1, description="当前页码")
+    pageSize: int = Field(10, ge=1, le=200, description="每页条数")
+    agencyName: Optional[str] = Field(None, description="机构名称模糊搜索")
+    contactPerson: Optional[str] = Field(None, description="联系人模糊搜索")
+    status: Optional[int] = Field(None, description="状态：0待审核 1正常 2已停用 3审核驳回")
+    province: Optional[str] = Field(None, description="省（精确匹配）")
+    city: Optional[str] = Field(None, description="市（精确匹配）")
+    district: Optional[str] = Field(None, description="区县（精确匹配）")
+
+
+class AppraisalAgencyCreate(BaseModel):
+    agencyName: str = Field(..., min_length=1, max_length=100, description="机构名称")
+    contactPerson: str = Field(..., min_length=1, max_length=50, description="联系人")
+    contactPhone: str = Field(..., min_length=1, max_length=20, description="联系电话")
+    province: str = Field(..., min_length=1, max_length=50, description="省")
+    city: str = Field(..., min_length=1, max_length=50, description="市")
+    district: str = Field(..., min_length=1, max_length=50, description="区县")
+    address: str = Field(..., min_length=1, max_length=255, description="详细地址")
+
+
+class AppraisalAgencyUpdate(BaseModel):
+    agencyName: Optional[str] = Field(None, min_length=1, max_length=100, description="机构名称")
+    contactPerson: Optional[str] = Field(None, min_length=1, max_length=50, description="联系人")
+    contactPhone: Optional[str] = Field(None, min_length=1, max_length=20, description="联系电话")
+    province: Optional[str] = Field(None, min_length=1, max_length=50, description="省")
+    city: Optional[str] = Field(None, min_length=1, max_length=50, description="市")
+    district: Optional[str] = Field(None, min_length=1, max_length=50, description="区县")
+    address: Optional[str] = Field(None, min_length=1, max_length=255, description="详细地址")
+
+
+class AppraisalAgencyAudit(BaseModel):
+    status: int = Field(..., description="审核结果：1通过 3驳回")
+    auditRemark: Optional[str] = Field(None, max_length=255, description="驳回原因（status=3 时必填）")
+
+
+class AppraisalAgencyOut(BaseModel):
+    id: str
+    agencyName: str
+    contactPerson: str
+    contactPhone: str
+    province: str
+    city: str
+    district: str
+    address: str
+    status: int
+    auditRemark: Optional[str] = None
     createdAt: str
     updatedAt: str

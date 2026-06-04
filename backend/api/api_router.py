@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from api.routers import (
     auth,
+    biz_agency,
     biz_case,
     biz_fragment,
     biz_news,
@@ -25,6 +26,7 @@ router.include_router(dict_type.router)
 router.include_router(dict_data.router)
 router.include_router(biz_news.router)
 router.include_router(biz_case.router)
+router.include_router(biz_agency.router)
 router.include_router(biz_fragment.router)
 router.include_router(sys_log.router)
 router.include_router(sys_api.router)

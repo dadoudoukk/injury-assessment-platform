@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -140,13 +140,48 @@ class CaseRecord(SoftDeleteMixin, Base):
     )
     victim_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="伤者姓名")
     victim_phone: Mapped[str] = mapped_column(String(20), nullable=False, comment="联系电话")
+    report_date: Mapped[date] = mapped_column(Date, nullable=False, index=True, comment="出险/报案日期")
+    province: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案省份")
     city: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案城市")
     district: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案区县")
+    accident_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="事故类型")
+    injury_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="伤情类型")
+    insurance_company: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True, comment="所属保险公司（字典 dict_value，中文名称）"
+    )
     status: Mapped[int] = mapped_column(
         Integer, default=1, nullable=False, index=True, comment="案件状态：1待接单 2鉴定中 3已完成"
     )
     agency_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="鉴定机构ID")
-    insurance_company_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="保险公司ID")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )
+
+
+class AppraisalAgency(SoftDeleteMixin, Base):
+    """鉴定机构表（平台级主数据，不参与数据权限）"""
+
+    __tablename__ = "biz_appraisal_agency"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agency_name: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True, comment="机构名称"
+    )
+    contact_person: Mapped[str] = mapped_column(String(50), nullable=False, comment="联系人")
+    contact_phone: Mapped[str] = mapped_column(String(20), nullable=False, comment="联系电话")
+    province: Mapped[str] = mapped_column(String(50), nullable=False, comment="省")
+    city: Mapped[str] = mapped_column(String(50), nullable=False, comment="市")
+    district: Mapped[str] = mapped_column(String(50), nullable=False, comment="区县")
+    address: Mapped[str] = mapped_column(String(255), nullable=False, comment="详细地址")
+    status: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, index=True, comment="状态：0待审核 1正常 2已停用 3审核驳回"
+    )
+    audit_remark: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="审核驳回原因"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
     )

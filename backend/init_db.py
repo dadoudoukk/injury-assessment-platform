@@ -16,6 +16,7 @@ import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # 保证从任意工作目录运行都能导入 backend 包
 _BACKEND_ROOT = Path(__file__).resolve().parent
@@ -33,6 +34,7 @@ from models import (  # noqa: F401
     BizFragmentContent,
     BizNewsArticle,
     BizNewsCategory,
+    CaseRecord,
     SysDept,
     SysDictData,
     SysDictType,
@@ -801,6 +803,84 @@ def ensure_sys_dict_init(session: Session) -> None:
     print("数据字典 sys_user_sex 已检查并写入（无重复项则跳过）。")
 
 
+def _ensure_dict_type_and_items(
+    session: Session,
+    *,
+    code: str,
+    dict_name: str,
+    items: tuple[tuple[str, str, int], ...],
+    remark: Optional[str] = None,
+) -> None:
+    """写入字典类型及字典项；类型或同 dict_value 已存在则跳过。"""
+    if not session.query(SysDictType).filter(SysDictType.dict_code == code).first():
+        session.add(
+            SysDictType(
+                dict_name=dict_name,
+                dict_code=code,
+                status=True,
+                remark=remark,
+            )
+        )
+    for label, value, sort in items:
+        exists = (
+            session.query(SysDictData)
+            .filter(SysDictData.dict_code == code, SysDictData.dict_value == value)
+            .first()
+        )
+        if exists:
+            continue
+        session.add(
+            SysDictData(
+                dict_code=code,
+                dict_label=label,
+                dict_value=value,
+                sort=sort,
+                status=True,
+                remark=None,
+            )
+        )
+
+
+def ensure_biz_case_dict_init(session: Session) -> None:
+    """案件管理相关字典（事故类型、伤情类型、保险公司）；可重复执行。"""
+    _ensure_dict_type_and_items(
+        session,
+        code="biz_accident_type",
+        dict_name="事故类型",
+        items=(
+            ("交通事故", "交通事故", 1),
+            ("工伤事故", "工伤事故", 2),
+            ("意外摔伤", "意外摔伤", 3),
+        ),
+        remark="案件管理-事故类型",
+    )
+    _ensure_dict_type_and_items(
+        session,
+        code="biz_injury_type",
+        dict_name="伤情类型",
+        items=(
+            ("轻微伤", "轻微伤", 1),
+            ("轻伤", "轻伤", 2),
+            ("重伤", "重伤", 3),
+        ),
+        remark="案件管理-伤情类型",
+    )
+    _ensure_dict_type_and_items(
+        session,
+        code="biz_insurance_company",
+        dict_name="保险公司",
+        items=(
+            ("中国平安", "中国平安", 1),
+            ("中国人保", "中国人保", 2),
+            ("中国太保", "中国太保", 3),
+            ("中国人寿", "中国人寿", 4),
+        ),
+        remark="案件管理-保险公司（dict_value 存中文名称）",
+    )
+    session.commit()
+    print("案件管理字典 biz_accident_type / biz_injury_type / biz_insurance_company 已检查并写入。")
+
+
 def ensure_news_center_menu(session: Session) -> None:
     """创建「新闻中心 -> 新闻分类」菜单并授权 admin；已存在则跳过。"""
     parent = session.query(SysMenu).filter(SysMenu.name == "newsCenter").first()
@@ -975,6 +1055,7 @@ async def main() -> None:
                 await session.run_sync(ensure_menu_api_path_prefix_seed)
                 await session.run_sync(ensure_dict_manage_menu)
                 await session.run_sync(ensure_sys_dict_init)
+                await session.run_sync(ensure_biz_case_dict_init)
                 await session.run_sync(ensure_news_center_menu)
                 await session.run_sync(ensure_news_category_init)
                 await session.run_sync(ensure_news_article_menu)

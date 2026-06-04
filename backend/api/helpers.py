@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
+    AppraisalAgency,
     BizFragmentCategory,
     BizFragmentContent,
     BizNewsArticle,
@@ -264,16 +265,40 @@ def fragment_content_row(r: BizFragmentContent) -> Dict[str, Any]:
 def case_record_row(r: CaseRecord) -> Dict[str, Any]:
     created = r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else ""
     updated = r.updated_at.strftime("%Y-%m-%d %H:%M:%S") if r.updated_at else ""
+    report_date = r.report_date.strftime("%Y-%m-%d") if r.report_date else ""
     return {
         "id": str(r.id),
         "reportNumber": r.report_number,
         "victimName": r.victim_name,
         "victimPhone": r.victim_phone,
+        "reportDate": report_date,
+        "province": r.province,
         "city": r.city,
         "district": r.district,
+        "accidentType": r.accident_type,
+        "injuryType": r.injury_type,
+        "insuranceCompany": r.insurance_company,
         "status": int(r.status),
         "agencyId": r.agency_id,
-        "insuranceCompanyId": r.insurance_company_id,
+        "createdAt": created,
+        "updatedAt": updated,
+    }
+
+
+def appraisal_agency_row(r: AppraisalAgency) -> Dict[str, Any]:
+    created = r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else ""
+    updated = r.updated_at.strftime("%Y-%m-%d %H:%M:%S") if r.updated_at else ""
+    return {
+        "id": str(r.id),
+        "agencyName": r.agency_name,
+        "contactPerson": r.contact_person,
+        "contactPhone": r.contact_phone,
+        "province": r.province,
+        "city": r.city,
+        "district": r.district,
+        "address": r.address,
+        "status": int(r.status),
+        "auditRemark": r.audit_remark or "",
         "createdAt": created,
         "updatedAt": updated,
     }
