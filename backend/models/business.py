@@ -115,3 +115,41 @@ class BizFragmentContent(SoftDeleteMixin, Base):
     sort: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="排序")
     status: Mapped[int] = mapped_column(Integer, default=1, nullable=False, comment="状态：0下线 1上线")
     create_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+
+
+class CaseRecord(SoftDeleteMixin, Base):
+    """案件记录表"""
+
+    __tablename__ = "biz_case_record"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dept_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sys_dept.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="归属部门（数据权限）",
+    )
+    created_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sys_user.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="创建人（数据权限-仅本人）",
+    )
+    report_number: Mapped[str] = mapped_column(
+        String(50), nullable=False, unique=True, index=True, comment="出险报案号"
+    )
+    victim_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="伤者姓名")
+    victim_phone: Mapped[str] = mapped_column(String(20), nullable=False, comment="联系电话")
+    city: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案城市")
+    district: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案区县")
+    status: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False, index=True, comment="案件状态：1待接单 2鉴定中 3已完成"
+    )
+    agency_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="鉴定机构ID")
+    insurance_company_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="保险公司ID")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )

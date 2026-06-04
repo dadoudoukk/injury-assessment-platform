@@ -10,6 +10,7 @@ from models import (
     BizFragmentContent,
     BizNewsArticle,
     BizNewsCategory,
+    CaseRecord,
     SysDictData,
     SysDictType,
     SysMenu,
@@ -257,6 +258,24 @@ def fragment_content_row(r: BizFragmentContent) -> Dict[str, Any]:
         "sort": r.sort,
         "status": 1 if int(r.status) == 1 else 0,
         "createTime": created,
+    }
+
+
+def case_record_row(r: CaseRecord) -> Dict[str, Any]:
+    created = r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else ""
+    updated = r.updated_at.strftime("%Y-%m-%d %H:%M:%S") if r.updated_at else ""
+    return {
+        "id": str(r.id),
+        "reportNumber": r.report_number,
+        "victimName": r.victim_name,
+        "victimPhone": r.victim_phone,
+        "city": r.city,
+        "district": r.district,
+        "status": int(r.status),
+        "agencyId": r.agency_id,
+        "insuranceCompanyId": r.insurance_company_id,
+        "createdAt": created,
+        "updatedAt": updated,
     }
 
 

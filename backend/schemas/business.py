@@ -132,3 +132,47 @@ class FragmentContentDeleteBody(BaseModel):
 class FragmentContentChangeStatusBody(BaseModel):
     id: Union[str, int] = Field(..., description="内容 ID")
     status: int = Field(..., description="状态：0下线 1上线")
+
+
+class CaseRecordListQuery(BaseModel):
+    pageNum: int = Field(1, ge=1, description="当前页码")
+    pageSize: int = Field(10, ge=1, le=200, description="每页条数")
+    reportNumber: Optional[str] = Field(None, description="出险报案号模糊搜索")
+    victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
+    status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
+
+
+class CaseRecordCreate(BaseModel):
+    reportNumber: str = Field(..., min_length=1, max_length=50, description="出险报案号")
+    victimName: str = Field(..., min_length=1, max_length=50, description="伤者姓名")
+    victimPhone: str = Field(..., min_length=1, max_length=20, description="联系电话")
+    city: str = Field(..., min_length=1, max_length=50, description="报案城市")
+    district: str = Field(..., min_length=1, max_length=50, description="报案区县")
+    status: int = Field(1, description="案件状态：1待接单 2鉴定中 3已完成")
+    agencyId: Optional[int] = Field(None, description="鉴定机构ID")
+    insuranceCompanyId: Optional[int] = Field(None, description="保险公司ID")
+
+
+class CaseRecordUpdate(BaseModel):
+    reportNumber: Optional[str] = Field(None, min_length=1, max_length=50, description="出险报案号")
+    victimName: Optional[str] = Field(None, min_length=1, max_length=50, description="伤者姓名")
+    victimPhone: Optional[str] = Field(None, min_length=1, max_length=20, description="联系电话")
+    city: Optional[str] = Field(None, min_length=1, max_length=50, description="报案城市")
+    district: Optional[str] = Field(None, min_length=1, max_length=50, description="报案区县")
+    status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
+    agencyId: Optional[int] = Field(None, description="鉴定机构ID")
+    insuranceCompanyId: Optional[int] = Field(None, description="保险公司ID")
+
+
+class CaseRecordOut(BaseModel):
+    id: str
+    reportNumber: str
+    victimName: str
+    victimPhone: str
+    city: str
+    district: str
+    status: int
+    agencyId: Optional[int] = None
+    insuranceCompanyId: Optional[int] = None
+    createdAt: str
+    updatedAt: str
