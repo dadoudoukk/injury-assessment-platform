@@ -1,5 +1,6 @@
 from datetime import date
-from typing import List, Optional, Union
+from decimal import Decimal
+from typing import Any, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -142,6 +143,7 @@ class CaseRecordListQuery(BaseModel):
     victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
     status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
     insuranceCompany: Optional[str] = Field(None, description="所属保险公司（精确匹配，中文名称）")
+    agencyId: Optional[int] = Field(None, description="鉴定机构ID（精确匹配）")
     reportDateStart: Optional[date] = Field(None, description="报案日期起（含）")
     reportDateEnd: Optional[date] = Field(None, description="报案日期止（含）")
 
@@ -176,6 +178,18 @@ class CaseRecordUpdate(BaseModel):
     agencyId: Optional[int] = Field(None, description="鉴定机构ID")
 
 
+class ReportFileItem(BaseModel):
+    url: str = Field(..., min_length=1, description="文件 URL")
+    name: Optional[str] = Field(None, description="原始文件名")
+    mime: Optional[str] = Field(None, description="MIME 类型")
+
+
+class CaseAppraisalSubmit(BaseModel):
+    appraisalAmount: Decimal = Field(..., gt=0, description="鉴定金额/预估理赔款")
+    appraisalConclusion: str = Field(..., min_length=1, description="鉴定结论")
+    reportFiles: List[ReportFileItem] = Field(..., min_length=1, description="报告附件，至少一项")
+
+
 class CaseRecordOut(BaseModel):
     id: str
     reportNumber: str
@@ -190,6 +204,12 @@ class CaseRecordOut(BaseModel):
     insuranceCompany: str
     status: int
     agencyId: Optional[int] = None
+    agencyName: Optional[str] = None
+    appraisalAmount: Optional[str] = None
+    appraisalConclusion: Optional[str] = None
+    reportFiles: Optional[List[Any]] = None
+    appraisalSubmittedAt: Optional[str] = None
+    appraisalSubmittedBy: Optional[int] = None
     createdAt: str
     updatedAt: str
 

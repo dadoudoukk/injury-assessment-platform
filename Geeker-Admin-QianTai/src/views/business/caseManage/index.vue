@@ -36,17 +36,12 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="报案地区" prop="regionCascader">
-          <el-cascader
-            v-model="form.regionCascader"
-            :options="pcaTextArr"
-            placeholder="请选择省 / 市 / 区"
-            clearable
-            filterable
-            style="width: 100%"
-            @change="onRegionChange"
-          />
-        </el-form-item>
+        <RegionCascader
+          v-model="form.regionCascader"
+          label="报案地区"
+          prop="regionCascader"
+          @change="onRegionChange"
+        />
         <el-form-item label="事故类型" prop="accidentType">
           <el-select v-model="form.accidentType" placeholder="请选择事故类型" clearable style="width: 100%">
             <el-option v-for="item in accidentTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -60,6 +55,22 @@
         <el-form-item label="保险公司" prop="insuranceCompany">
           <el-select v-model="form.insuranceCompany" placeholder="请选择保险公司" clearable style="width: 100%">
             <el-option v-for="item in insuranceCompanyOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="鉴定机构" prop="agencyId">
+          <el-select
+            v-model="form.agencyId"
+            placeholder="请选择鉴定机构（可清空）"
+            clearable
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in agencySelectOptions"
+              :key="item.id"
+              :label="item.agencyName"
+              :value="item.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="案件状态" prop="status">
@@ -77,12 +88,12 @@
 </template>
 
 <script setup lang="tsx" name="caseManage">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { CirclePlus, Delete, EditPen } from "@element-plus/icons-vue";
 import { ElMessage, FormInstance } from "element-plus";
 import type { FormRules } from "element-plus";
-import { pcaTextArr } from "element-china-area-data";
 import ProTable from "@/components/ProTable/index.vue";
+import RegionCascader from "@/components/RegionCascader/index.vue";
 import { ColumnProps, ProTableInstance } from "@/components/ProTable/interface";
 import {
   addCaseRecord,
@@ -93,8 +104,10 @@ import {
   type CaseRecordForm,
   type CaseRecordRow
 } from "@/api/modules/bizCase";
+import { getAgencyOptions, type AgencyOption } from "@/api/modules/bizAgency";
 import { getDictByCode, type DictOption } from "@/api/modules/dict";
 import { useHandleData } from "@/hooks/useHandleData";
+import { decodeRegion, encodeRegion, formatRegionText, validateRegion } from "@/utils/region";
 
 const caseStatusOptions = [
   { label: "待接单", value: 1, tagType: "warning" },
@@ -108,28 +121,7 @@ const caseStatusMap: Record<number, { label: string; tagType: string }> = {
   3: { label: "已完成", tagType: "success" }
 };
 
-/** 省市区 cascader 数组 → 三个独立字段 */
-const encodeRegion = (region: string[]) => ({
-  province: region[0]?.trim() || "",
-  city: region[1]?.trim() || "",
-  district: region[2]?.trim() || ""
-});
-
-/** 三个独立字段 → cascader 回显数组 */
-const decodeRegion = (province?: string, city?: string, district?: string): string[] => {
-  const arr: string[] = [];
-  if (province?.trim()) arr.push(province.trim());
-  if (city?.trim()) arr.push(city.trim());
-  if (district?.trim()) arr.push(district.trim());
-  return arr;
-};
-
-const syncRegionToForm = (region: string[]) => {
-  const { province, city, district } = encodeRegion(region);
-  form.province = province;
-  form.city = city;
-  form.district = district;
-};
+const ORPHAN_AGENCY_SUFFIX = " (已不可用)";
 
 const proTable = ref<ProTableInstance>();
 const dialogVisible = ref(false);
@@ -141,6 +133,16 @@ const submitLoading = ref(false);
 const accidentTypeOptions = ref<DictOption[]>([]);
 const injuryTypeOptions = ref<DictOption[]>([]);
 const insuranceCompanyOptions = ref<DictOption[]>([]);
+const agencyOptions = ref<AgencyOption[]>([]);
+/** 编辑弹窗内下拉选项（含孤儿临时项） */
+const agencySelectOptions = ref<AgencyOption[]>([]);
+
+const agencySearchEnum = computed(() =>
+  agencyOptions.value.map(item => ({
+    label: item.agencyName,
+    value: Number(item.id)
+  }))
+);
 
 const form = reactive({
   id: "",
@@ -155,18 +157,21 @@ const form = reactive({
   accidentType: "",
   injuryType: "",
   insuranceCompany: "",
-  status: 1
+  status: 1,
+  agencyId: "" as string
 });
 
 onMounted(async () => {
-  const [accidentRes, injuryRes, insuranceRes] = await Promise.all([
+  const [accidentRes, injuryRes, insuranceRes, agencyRes] = await Promise.all([
     getDictByCode("biz_accident_type"),
     getDictByCode("biz_injury_type"),
-    getDictByCode("biz_insurance_company")
+    getDictByCode("biz_insurance_company"),
+    getAgencyOptions()
   ]);
   accidentTypeOptions.value = accidentRes.data;
   injuryTypeOptions.value = injuryRes.data;
   insuranceCompanyOptions.value = insuranceRes.data;
+  agencyOptions.value = agencyRes.data.list || [];
 });
 
 const validatePhone = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
@@ -176,14 +181,6 @@ const validatePhone = (_rule: unknown, value: string, callback: (error?: Error) 
   }
   if (!/^1[3-9]\d{9}$/.test(value.trim())) {
     callback(new Error("请输入正确的手机号"));
-    return;
-  }
-  callback();
-};
-
-const validateRegion = (_rule: unknown, value: string[], callback: (error?: Error) => void) => {
-  if (!value || value.length < 3) {
-    callback(new Error("请选择完整的省 / 市 / 区"));
     return;
   }
   callback();
@@ -201,8 +198,38 @@ const rules: FormRules = {
   status: [{ required: true, message: "请选择案件状态", trigger: "change" }]
 };
 
-const onRegionChange = (value: string[] | null | undefined) => {
-  syncRegionToForm(value || []);
+const syncRegionToForm = (region: string[]) => {
+  const { province, city, district } = encodeRegion(region);
+  form.province = province;
+  form.city = city;
+  form.district = district;
+};
+
+const onRegionChange = (value: string[]) => {
+  syncRegionToForm(value);
+};
+
+const resetAgencySelectOptions = () => {
+  agencySelectOptions.value = agencyOptions.value.map(item => ({ ...item }));
+};
+
+/** 孤儿机构：当前 agencyId 不在正常 options 中时，注入临时选项供回显与改选 */
+const applyAgencyToForm = (agencyId?: number | null, agencyName?: string | null) => {
+  resetAgencySelectOptions();
+  if (agencyId == null) {
+    form.agencyId = "";
+    return;
+  }
+  const idStr = String(agencyId);
+  form.agencyId = idStr;
+  const inOptions = agencySelectOptions.value.some(item => item.id === idStr);
+  if (!inOptions) {
+    const baseName = (agencyName || "未知机构").replace(ORPHAN_AGENCY_SUFFIX, "");
+    agencySelectOptions.value.unshift({
+      id: idStr,
+      agencyName: `${baseName}${ORPHAN_AGENCY_SUFFIX}`
+    });
+  }
 };
 
 const fillFormFromRow = (row: CaseRecordRow) => {
@@ -219,6 +246,14 @@ const fillFormFromRow = (row: CaseRecordRow) => {
   form.injuryType = row.injuryType || "";
   form.insuranceCompany = row.insuranceCompany || "";
   form.status = row.status || 1;
+  applyAgencyToForm(row.agencyId, row.agencyName);
+};
+
+const resolveAgencyIdForSubmit = (): number | null => {
+  const raw = form.agencyId?.trim();
+  if (!raw) return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
 };
 
 const buildSubmitPayload = (): CaseRecordForm => {
@@ -234,7 +269,8 @@ const buildSubmitPayload = (): CaseRecordForm => {
     accidentType: form.accidentType,
     injuryType: form.injuryType,
     insuranceCompany: form.insuranceCompany,
-    status: form.status
+    status: form.status,
+    agencyId: resolveAgencyIdForSubmit()
   };
 };
 
@@ -262,6 +298,7 @@ const getTableList = (params: any) => {
 
 const openAdd = () => {
   isEdit.value = false;
+  resetAgencySelectOptions();
   dialogVisible.value = true;
 };
 
@@ -293,6 +330,8 @@ const resetForm = () => {
   form.injuryType = "";
   form.insuranceCompany = "";
   form.status = 1;
+  form.agencyId = "";
+  resetAgencySelectOptions();
   isEdit.value = false;
   formRef.value?.clearValidate();
 };
@@ -343,9 +382,12 @@ const columns = reactive<ColumnProps<CaseRecordRow>[]>([
       props: { type: "daterange", valueFormat: "YYYY-MM-DD" }
     }
   },
-  { prop: "province", label: "省", minWidth: 90 },
-  { prop: "city", label: "市", minWidth: 90 },
-  { prop: "district", label: "区", minWidth: 90 },
+  {
+    prop: "region",
+    label: "报案地区",
+    minWidth: 180,
+    render: scope => formatRegionText(scope.row.province, scope.row.city, scope.row.district) || "--"
+  },
   {
     prop: "victimName",
     label: "伤者姓名",
@@ -362,6 +404,15 @@ const columns = reactive<ColumnProps<CaseRecordRow>[]>([
     isFilterEnum: false,
     enum: () => getDictByCode("biz_insurance_company"),
     search: { el: "select", props: { placeholder: "请选择保险公司", filterable: true } }
+  },
+  {
+    prop: "agencyId",
+    label: "鉴定机构",
+    minWidth: 140,
+    isFilterEnum: false,
+    enum: agencySearchEnum,
+    search: { el: "select", props: { placeholder: "请选择鉴定机构", filterable: true, clearable: true } },
+    render: scope => scope.row.agencyName || "暂未指派"
   },
   {
     prop: "status",

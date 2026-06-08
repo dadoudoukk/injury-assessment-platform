@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from decimal import Decimal
+from typing import Any, List, Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -153,6 +154,19 @@ class CaseRecord(SoftDeleteMixin, Base):
         Integer, default=1, nullable=False, index=True, comment="案件状态：1待接单 2鉴定中 3已完成"
     )
     agency_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="鉴定机构ID")
+    appraisal_amount: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True, comment="鉴定金额/预估理赔款"
+    )
+    appraisal_conclusion: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="鉴定结论")
+    report_files: Mapped[Optional[List[Any]]] = mapped_column(JSON, nullable=True, comment="报告附件 JSON 数组")
+    appraisal_submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, comment="报告提交时间"
+    )
+    appraisal_submitted_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sys_user.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="报告提交人",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
     )

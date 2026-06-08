@@ -1,4 +1,6 @@
+import json
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
@@ -262,10 +264,36 @@ def fragment_content_row(r: BizFragmentContent) -> Dict[str, Any]:
     }
 
 
-def case_record_row(r: CaseRecord) -> Dict[str, Any]:
+def _serialize_report_files(raw: Any) -> Optional[List[Any]]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, list) else None
+    if isinstance(raw, list):
+        return raw
+    return None
+
+
+def _format_appraisal_amount(amount: Any) -> Optional[str]:
+    if amount is None:
+        return None
+    return f"{Decimal(str(amount)):.2f}"
+
+
+def case_record_row(r: CaseRecord, agency_name: Optional[str] = None) -> Dict[str, Any]:
     created = r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else ""
     updated = r.updated_at.strftime("%Y-%m-%d %H:%M:%S") if r.updated_at else ""
     report_date = r.report_date.strftime("%Y-%m-%d") if r.report_date else ""
+    submitted_at = (
+        r.appraisal_submitted_at.strftime("%Y-%m-%d %H:%M:%S") if r.appraisal_submitted_at else ""
+    )
     return {
         "id": str(r.id),
         "reportNumber": r.report_number,
@@ -280,6 +308,12 @@ def case_record_row(r: CaseRecord) -> Dict[str, Any]:
         "insuranceCompany": r.insurance_company,
         "status": int(r.status),
         "agencyId": r.agency_id,
+        "agencyName": agency_name or None,
+        "appraisalAmount": _format_appraisal_amount(r.appraisal_amount),
+        "appraisalConclusion": r.appraisal_conclusion or None,
+        "reportFiles": _serialize_report_files(r.report_files),
+        "appraisalSubmittedAt": submitted_at or None,
+        "appraisalSubmittedBy": r.appraisal_submitted_by,
         "createdAt": created,
         "updatedAt": updated,
     }
