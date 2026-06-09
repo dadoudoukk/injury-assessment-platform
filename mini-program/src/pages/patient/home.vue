@@ -216,13 +216,15 @@ const onGetPhoneNumber = async (e: any) => {
 
 .register-link {
   text-align: center;
-  font-size: 26rpx;
-  color: #888;
-  margin-top: 10rpx;
-  padding: 20rpx;
+  font-size: 28rpx;
+  color: #666;
+  margin-top: 20rpx;
+  padding: 30rpx;
+  width: 100%;
 }
 .register-link .link-text {
   color: #0ba360;
   font-weight: 500;
+  text-decoration: underline;
 }
 </style>
