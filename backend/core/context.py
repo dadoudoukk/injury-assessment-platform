@@ -25,6 +25,9 @@ ctx_allowed_dept_ids: ContextVar[Optional[List[int]]] = ContextVar("ctx_allowed_
 
 ctx_is_superuser: ContextVar[Optional[bool]] = ContextVar("ctx_is_superuser", default=None)
 
+# 当前用户所属鉴定机构 ID（biz_appraisal_agency.id），平台用户为 None
+ctx_agency_id: ContextVar[Optional[int]] = ContextVar("ctx_agency_id", default=None)
+
 ContextTokens = dict[str, Token[object]]
 
 
@@ -38,6 +41,7 @@ def begin_data_permission_context_scope() -> ContextTokens:
         "ctx_data_scope": ctx_data_scope.set(None),
         "ctx_allowed_dept_ids": ctx_allowed_dept_ids.set(None),
         "ctx_is_superuser": ctx_is_superuser.set(None),
+        "ctx_agency_id": ctx_agency_id.set(None),
     }
 
 
@@ -53,9 +57,11 @@ def clear_data_permission_context(tokens: Optional[ContextTokens] = None) -> Non
         ctx_data_scope.reset(tokens["ctx_data_scope"])
         ctx_allowed_dept_ids.reset(tokens["ctx_allowed_dept_ids"])
         ctx_is_superuser.reset(tokens["ctx_is_superuser"])
+        ctx_agency_id.reset(tokens["ctx_agency_id"])
         return
     ctx_user_id.set(None)
     ctx_dept_id.set(None)
     ctx_data_scope.set(None)
     ctx_allowed_dept_ids.set(None)
     ctx_is_superuser.set(None)
+    ctx_agency_id.set(None)

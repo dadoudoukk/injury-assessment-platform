@@ -5,122 +5,100 @@
 </template>
 
 <script setup lang="ts" name="pie">
+import { computed } from "vue";
 import { ECOption } from "@/components/ECharts/config";
 import ECharts from "@/components/ECharts/index.vue";
 
-const pieData = [
-  { value: 5000, name: "Gitee 访问量" },
-  { value: 5000, name: "GitHub 访问量" }
-];
+const props = defineProps<{
+  pieData: Array<{ name: string; value: number }>;
+}>();
 
-const option: ECOption = {
-  title: {
-    text: "Gitee / GitHub",
-    subtext: "访问占比",
-    left: "56%",
-    top: "45%",
-    textAlign: "center",
-    textStyle: {
-      fontSize: 18,
-      color: "#767676"
-    },
-    subtextStyle: {
-      fontSize: 15,
-      color: "#a1a1a1"
-    }
-  },
-  tooltip: {
-    trigger: "item"
-  },
-  legend: {
-    top: "4%",
-    left: "2%",
-    orient: "vertical",
-    icon: "circle", //图例形状
-    align: "left",
-    itemGap: 20,
-    textStyle: {
-      fontSize: 13,
-      color: "#a1a1a1",
-      fontWeight: 500
-    },
-    formatter: function (name: string) {
-      let dataCopy = "";
-      for (let i = 0; i < pieData.length; i++) {
-        if (pieData[i].name == name && pieData[i].value >= 10000) {
-          dataCopy = (pieData[i].value / 10000).toFixed(2);
-          return name + "      " + dataCopy + "w";
-        } else if (pieData[i].name == name) {
-          dataCopy = pieData[i].value + "";
-          return name + "      " + dataCopy;
-        }
-      }
-      return "";
-    }
-  },
-  series: [
-    {
-      type: "pie",
-      radius: ["70%", "40%"],
-      center: ["57%", "52%"],
-      silent: true,
-      clockwise: true,
-      startAngle: 150,
-      data: pieData,
-      labelLine: {
-        length: 80,
-        length2: 30,
-        lineStyle: {
-          width: 1
-        }
+const option = computed<ECOption>(() => {
+  const data = props.pieData && props.pieData.length ? props.pieData : [{ name: "暂无数据", value: 0 }];
+  
+  return {
+    title: {
+      text: "保险公司",
+      subtext: "案件占比",
+      left: "56%",
+      top: "45%",
+      textAlign: "center",
+      textStyle: {
+        fontSize: 18,
+        color: "#767676"
       },
-      label: {
-        position: "outside",
-        show: true,
-        formatter: "{d}%",
-        fontWeight: 400,
-        fontSize: 19,
+      subtextStyle: {
+        fontSize: 15,
         color: "#a1a1a1"
+      }
+    },
+    tooltip: {
+      trigger: "item"
+    },
+    legend: {
+      top: "4%",
+      left: "2%",
+      orient: "vertical",
+      icon: "circle",
+      align: "left",
+      itemGap: 20,
+      textStyle: {
+        fontSize: 13,
+        color: "#a1a1a1",
+        fontWeight: 500
       },
-      color: [
-        {
-          type: "linear",
-          x: 0,
-          y: 0,
-          x2: 0.5,
-          y2: 1,
-          colorStops: [
-            {
-              offset: 0,
-              color: "#feb791" // 0% 处的颜色
-            },
-            {
-              offset: 1,
-              color: "#fe8b4c" // 100% 处的颜色
-            }
-          ]
-        },
-        {
-          type: "linear",
-          x: 0,
-          y: 0,
-          x2: 1,
-          y2: 0.5,
-          colorStops: [
-            {
-              offset: 0,
-              color: "#b898fd" // 0% 处的颜色
-            },
-            {
-              offset: 1,
-              color: "#8347fd" // 100% 处的颜色
-            }
-          ]
+      formatter: function (name: string) {
+        let dataCopy = "";
+        for (let i = 0; i < data.length; i++) {
+          if (data[i].name == name && data[i].value >= 10000) {
+            dataCopy = (data[i].value / 10000).toFixed(2);
+            return name + "      " + dataCopy + "w";
+          } else if (data[i].name == name) {
+            dataCopy = data[i].value + "";
+            return name + "      " + dataCopy;
+          }
         }
-      ]
-    }
-  ]
-};
+        return name;
+      }
+    },
+    series: [
+      {
+        type: "pie",
+        radius: ["70%", "40%"],
+        center: ["57%", "52%"],
+        silent: false,
+        clockwise: true,
+        startAngle: 150,
+        data: data,
+        labelLine: {
+          length: 80,
+          length2: 30,
+          lineStyle: {
+            width: 1
+          }
+        },
+        label: {
+          position: "outside",
+          show: true,
+          formatter: "{d}%",
+          fontWeight: 400,
+          fontSize: 19,
+          color: "#a1a1a1"
+        },
+        color: [
+          "#feb791",
+          "#b898fd",
+          "#8347fd",
+          "#3cba92",
+          "#0ba360",
+          "#f59a23",
+          "#1890ff",
+          "#ff4d4f"
+        ]
+      }
+    ]
+  };
+});
 </script>
 
 <style lang="scss" scoped>

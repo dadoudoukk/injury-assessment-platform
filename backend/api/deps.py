@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from core.config import get_settings
 from core.context import (
+    ctx_agency_id,
     ctx_allowed_dept_ids,
     ctx_data_scope,
     ctx_dept_id,
@@ -74,6 +75,7 @@ def _user_to_ctx_dict(user: SysUser) -> Dict[str, Any]:
         "roleName": role_name,
         "roles": role_codes,
         "is_superuser": user.is_superuser,
+        "agency_id": user.agency_id,
     }
 
 
@@ -100,6 +102,7 @@ async def activate_data_permission_context(db: AsyncSession, user: SysUser) -> N
     """
     ctx_user_id.set(user.id)
     ctx_dept_id.set(user.dept_id)
+    ctx_agency_id.set(user.agency_id)
     ctx_is_superuser.set(bool(user.is_superuser))
 
     if user.is_superuser:
@@ -160,6 +163,17 @@ async def _load_user_by_id_for_auth(db: AsyncSession, user_id: int) -> Optional[
         )
     )
     return (await db.scalars(stmt)).first()
+
+
+async def get_current_user(
+    db: AsyncSession = Depends(get_async_db),
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+) -> dict:
+    """依赖注入：解析 Token，激活数据权限上下文（含 agency_id），返回当前用户字典。"""
+    ctx = await require_user_with_data_perm(db, x_access_token)
+    if not ctx:
+        raise HTTPException(status_code=401, detail="登录过期，请重新登录")
+    return ctx
 
 
 async def require_user_with_data_perm(db: AsyncSession, x_access_token: Optional[str]) -> Optional[dict]:

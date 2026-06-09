@@ -27,7 +27,8 @@ from api.helpers import (
     user_row,
 )
 from core.config import get_settings
-from models import SysRole, SysUser
+from models import AppraisalAgency, SysRole, SysUser
+from models.rbac import DataScopeEnum
 from schemas.user import (
     UserAddBody,
     UserChangePasswordBody,
@@ -42,6 +43,34 @@ router = APIRouter(prefix="/user", tags=["用户管理"])
 _settings = get_settings()
 
 
+async def _resolve_user_agency_id(db: AsyncSession, agency_id: Optional[int]) -> tuple[Optional[int], Optional[str]]:
+    """校验并解析用户绑定的机构 ID；通过返回 (id, None)，失败返回 (None, 错误文案)。"""
+    if agency_id is None:
+        return None, None
+    stmt = (
+        select(AppraisalAgency.id)
+        .where(
+            AppraisalAgency.id == agency_id,
+            AppraisalAgency.is_delete == 0,
+            AppraisalAgency.status == 1,
+        )
+        .limit(1)
+    )
+    if (await db.scalars(stmt)).first() is None:
+        return None, "鉴定机构不存在或不可用"
+    return agency_id, None
+
+
+def _validate_agency_user_roles(agency_id: Optional[int], roles: List[SysRole]) -> Optional[str]:
+    """机构账号禁止绑定「全部数据」范围的角色。"""
+    if agency_id is None:
+        return None
+    for role in roles:
+        if int(role.data_scope) == DataScopeEnum.ALL.value:
+            return "机构账号不可绑定「全部数据」范围的角色"
+    return None
+
+
 @router.get("/info")
 async def user_info(
     x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
@@ -54,12 +83,23 @@ async def user_info(
     bundle = await db.run_sync(lambda s: get_user_perms_bundle(s, ctx))
     buttons = bundle.get("codes") or []
 
+    # Fetch user details to get phone and agency name
+    from sqlalchemy.orm import selectinload
+    user = (await db.scalars(
+        select(SysUser)
+        .where(SysUser.id == ctx["user_id"])
+        .options(selectinload(SysUser.agency))
+    )).first()
+
     data = {
         "id": str(ctx["user_id"]),
         "name": ctx["username"],
         "avatar": ctx.get("avatar") or _settings.default_avatar_url,
         "roles": ctx.get("roles") or [],
         "roleName": ctx.get("roleName") or "管理员",
+        "agencyId": ctx.get("agency_id"),
+        "agencyName": user.agency.agency_name if user and user.agency else None,
+        "phone": user.phone if user else None,
         "buttons": buttons,
     }
     return make_response(200, data=data, msg="success")
@@ -103,7 +143,9 @@ async def user_list_page(
     if not ctx:
         return make_response(401, data={}, msg="登录过期，请重新登录")
 
-    q = select(SysUser).where(SysUser.is_delete == 0).options(selectinload(SysUser.roles), selectinload(SysUser.dept))
+    q = select(SysUser).where(SysUser.is_delete == 0).options(
+        selectinload(SysUser.roles), selectinload(SysUser.dept), selectinload(SysUser.agency)
+    )
     if body.username and body.username.strip():
         kw = f"%{body.username.strip()}%"
         q = q.where(SysUser.username.like(kw))
@@ -147,6 +189,21 @@ async def user_add(
         return make_response(500, data={}, msg="用户名已存在")
 
     gv = (str(body.gender).strip() if body.gender is not None else "") or "3"
+    agency_id, agency_err = await _resolve_user_agency_id(db, body.agencyId)
+    if agency_err:
+        return make_response(500, data={}, msg=agency_err)
+
+    roles: List[SysRole] = []
+    if body.roleIds:
+        roles = list(
+            await db.scalars(
+                select(SysRole).where(SysRole.id.in_(body.roleIds), SysRole.is_active == True, SysRole.is_delete == 0)  # noqa: E712
+            )
+        )
+    role_err = _validate_agency_user_roles(agency_id, roles)
+    if role_err:
+        return make_response(500, data={}, msg=role_err)
+
     u = SysUser(
         username=name,
         password=pwd_context.hash(body.password),
@@ -156,13 +213,9 @@ async def user_add(
         gender=gv,
         is_active=True,
         is_superuser=False,
+        agency_id=agency_id,
     )
-    if body.roleIds:
-        roles = (
-            await db.scalars(
-                select(SysRole).where(SysRole.id.in_(body.roleIds), SysRole.is_active == True, SysRole.is_delete == 0)  # noqa: E712
-            )
-        ).all()
+    if roles:
         u.roles = roles
     db.add(u)
     await db.commit()
@@ -216,11 +269,17 @@ async def user_edit(
         await db.scalars(
             select(SysUser)
             .where(SysUser.id == uid, SysUser.is_delete == 0)
-            .options(selectinload(SysUser.roles), selectinload(SysUser.dept))
+            .options(selectinload(SysUser.roles), selectinload(SysUser.dept), selectinload(SysUser.agency))
         )
     ).first()
     if not u:
         return make_response(500, data={}, msg="用户不存在")
+
+    if "agencyId" in body.model_fields_set:
+        agency_id, agency_err = await _resolve_user_agency_id(db, body.agencyId)
+        if agency_err:
+            return make_response(500, data={}, msg=agency_err)
+        u.agency_id = agency_id
 
     if body.username is not None:
         name = body.username.strip()
@@ -243,15 +302,20 @@ async def user_edit(
     if body.gender is not None:
         u.gender = str(body.gender).strip() or "3"
     role_ids = list(dict.fromkeys([int(rid) for rid in (body.roleIds or [])]))
+    roles: List[SysRole] = []
     if role_ids:
-        roles = (
+        roles = list(
             await db.scalars(
                 select(SysRole).where(SysRole.id.in_(role_ids), SysRole.is_active == True, SysRole.is_delete == 0)  # noqa: E712
             )
-        ).all()
+        )
         u.roles = roles
     else:
         u.roles = []
+
+    role_err = _validate_agency_user_roles(u.agency_id, roles)
+    if role_err:
+        return make_response(500, data={}, msg=role_err)
 
     await db.commit()
     invalidate_user_perms_cache(uid)
@@ -338,7 +402,9 @@ async def user_export(
         raise HTTPException(status_code=401, detail="登录过期，请重新登录")
 
     query_body = body or UserExportBody()
-    q = select(SysUser).where(SysUser.is_delete == 0).options(selectinload(SysUser.roles), selectinload(SysUser.dept))
+    q = select(SysUser).where(SysUser.is_delete == 0).options(
+        selectinload(SysUser.roles), selectinload(SysUser.dept), selectinload(SysUser.agency)
+    )
     if query_body.username and query_body.username.strip():
         q = q.where(SysUser.username.like(f"%{query_body.username.strip()}%"))
     if query_body.gender is not None and str(query_body.gender).strip() != "":

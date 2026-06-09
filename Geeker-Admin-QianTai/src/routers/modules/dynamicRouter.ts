@@ -23,7 +23,8 @@ export const initDynamicRouter = async () => {
     const infoRes = await getUserInfoApi();
     userStore.setUserInfo({
       name: infoRes.data?.name || "管理员",
-      roleName: infoRes.data?.roleName || infoRes.data?.roles?.[0] || "管理员"
+      roleName: infoRes.data?.roleName || infoRes.data?.roles?.[0] || "管理员",
+      agencyId: infoRes.data?.agencyId ?? null
     });
 
     await globalStore.initSysConfig();

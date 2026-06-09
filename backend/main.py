@@ -30,7 +30,7 @@ _settings = get_settings()
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
 LOGIN_PATHS = ("/api/login",)
 # 不走鉴权与接口级限流的匿名 API（登录、登录页公开配置等；操作日志正文解析仍仅用 LOGIN_PATHS）
-ANONYMOUS_API_PATHS = ("/api/login", "/api/sys_config/public")
+ANONYMOUS_API_PATHS = ("/api/login", "/api/sys_config/public", "/api/biz/agency/register")
 
 app = FastAPI(title="接口调试")
 # 若后续增加安全响应头中间件：请勿对管理端同源 iframe 内嵌 /docs 使用 X-Frame-Options: DENY

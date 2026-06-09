@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_async_db, make_response, require_permission, require_user
+from api.deps import get_async_db, make_response, pwd_context, require_permission, require_user
 from api.helpers import appraisal_agency_row
-from models import AppraisalAgency, CaseRecord
+from models import AppraisalAgency, CaseRecord, SysRole, SysUser
 from schemas.business import AppraisalAgencyAudit, AppraisalAgencyCreate, AppraisalAgencyUpdate
 
 router = APIRouter(prefix="/biz/agency", tags=["业务-鉴定机构管理"])
@@ -178,6 +178,39 @@ async def agency_detail(
     return make_response(200, data=appraisal_agency_row(row), msg="success")
 
 
+@router.post("/register")
+async def agency_register(
+    body: AppraisalAgencyCreate,
+    db: AsyncSession = Depends(get_async_db)
+) -> Dict[str, Any]:
+    agency_name = body.agencyName.strip()
+    contact_person = body.contactPerson.strip()
+    contact_phone = body.contactPhone.strip()
+    province = body.province.strip()
+    city = body.city.strip()
+    district = body.district.strip()
+    address = body.address.strip()
+
+    if not agency_name:
+        return make_response(500, data={}, msg="机构名称不能为空")
+    if await _agency_name_exists(db, agency_name):
+        return make_response(500, data={}, msg="机构名称已存在，请确认是否已被注册")
+
+    # The agency is created with status=0 (待审核)
+    new_agency = AppraisalAgency(
+        agency_name=agency_name,
+        contact_person=contact_person,
+        contact_phone=contact_phone,
+        province=province,
+        city=city,
+        district=district,
+        address=address,
+        status=0,
+    )
+    db.add(new_agency)
+    await db.commit()
+    return make_response(200, data={}, msg="入驻申请已提交，请等待审核")
+
 @router.post("", dependencies=[Depends(require_permission("agency:add"))])
 async def agency_create(
     body: AppraisalAgencyCreate,
@@ -271,6 +304,39 @@ async def agency_audit(
         row.status = 1
         row.audit_remark = None
         msg = "审核通过"
+        
+        # 自动创建机构管理员账号
+        user_stmt = select(SysUser).where(SysUser.username == row.contact_phone, SysUser.is_delete == 0)
+        existing_user = (await db.scalars(user_stmt)).first()
+        
+        if not existing_user:
+            # 查找或创建机构管理人员角色
+            role_stmt = select(SysRole).where(SysRole.name == "机构管理人员", SysRole.is_delete == 0)
+            agency_role = (await db.scalars(role_stmt)).first()
+            if not agency_role:
+                agency_role = SysRole(
+                    name="机构管理人员",
+                    code="agency_admin",
+                    description="自动创建的机构管理人员角色",
+                    data_scope=4,  # 1全部 2本部门及以下 3本部门 4仅本人 5自定义部门 (机构人员设为仅本人或按需配置)
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(agency_role)
+                await db.flush()  # 确保角色有 ID
+            
+            new_user = SysUser(
+                username=row.contact_phone,
+                password=pwd_context.hash("123456"),
+                nickname=f"{row.contact_person} (机构管理员)",
+                phone=row.contact_phone,
+                agency_id=row.id,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            new_user.roles.append(agency_role)
+            db.add(new_user)
+            msg = "审核通过，已自动生成机构管理员账号，账号为联系电话，初始密码为123456"
     else:
         row.status = 3
         row.audit_remark = audit_remark

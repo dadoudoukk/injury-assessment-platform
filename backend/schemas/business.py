@@ -148,6 +148,16 @@ class CaseRecordListQuery(BaseModel):
     reportDateEnd: Optional[date] = Field(None, description="报案日期止（含）")
 
 
+class CaseRecordExportQuery(BaseModel):
+    reportNumber: Optional[str] = Field(None, description="出险报案号模糊搜索")
+    victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
+    status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
+    insuranceCompany: Optional[str] = Field(None, description="所属保险公司（精确匹配，中文名称）")
+    agencyId: Optional[int] = Field(None, description="鉴定机构ID（精确匹配）")
+    reportDateStart: Optional[date] = Field(None, description="报案日期起（含）")
+    reportDateEnd: Optional[date] = Field(None, description="报案日期止（含）")
+
+
 class CaseRecordCreate(BaseModel):
     reportNumber: str = Field(..., min_length=1, max_length=50, description="出险报案号")
     victimName: str = Field(..., min_length=1, max_length=50, description="伤者姓名")
@@ -208,11 +218,18 @@ class CaseRecordOut(BaseModel):
     appraisalAmount: Optional[str] = None
     appraisalConclusion: Optional[str] = None
     reportFiles: Optional[List[Any]] = None
+    reworkRemark: Optional[str] = None
     appraisalSubmittedAt: Optional[str] = None
     appraisalSubmittedBy: Optional[int] = None
     createdAt: str
     updatedAt: str
 
+
+class CaseRejectBody(BaseModel):
+    reason: Optional[str] = Field(None, description="拒单原因")
+
+class CaseReworkBody(BaseModel):
+    remark: str = Field(..., min_length=1, description="打回重做原因/复议意见")
 
 class AppraisalAgencyListQuery(BaseModel):
     pageNum: int = Field(1, ge=1, description="当前页码")
@@ -261,5 +278,39 @@ class AppraisalAgencyOut(BaseModel):
     address: str
     status: int
     auditRemark: Optional[str] = None
+    createdAt: str
+    updatedAt: str
+
+
+class BizInsuranceCompanyListQuery(BaseModel):
+    pageNum: int = Field(1, ge=1, description="当前页码")
+    pageSize: int = Field(10, ge=1, le=200, description="每页条数")
+    companyName: Optional[str] = Field(None, description="公司名称模糊搜索")
+    status: Optional[int] = Field(None, description="状态：1正常 0停用")
+
+
+class BizInsuranceCompanyCreate(BaseModel):
+    companyName: str = Field(..., min_length=1, max_length=100, description="保险公司名称")
+    contactPerson: Optional[str] = Field(None, max_length=50, description="联系人")
+    contactPhone: Optional[str] = Field(None, max_length=20, description="联系电话")
+    status: int = Field(1, description="状态：1正常 0停用")
+    remark: Optional[str] = Field(None, max_length=255, description="备注")
+
+
+class BizInsuranceCompanyUpdate(BaseModel):
+    companyName: Optional[str] = Field(None, min_length=1, max_length=100, description="保险公司名称")
+    contactPerson: Optional[str] = Field(None, max_length=50, description="联系人")
+    contactPhone: Optional[str] = Field(None, max_length=20, description="联系电话")
+    status: Optional[int] = Field(None, description="状态：1正常 0停用")
+    remark: Optional[str] = Field(None, max_length=255, description="备注")
+
+
+class BizInsuranceCompanyOut(BaseModel):
+    id: str
+    companyName: str
+    contactPerson: Optional[str] = None
+    contactPhone: Optional[str] = None
+    status: int
+    remark: Optional[str] = None
     createdAt: str
     updatedAt: str

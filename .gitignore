@@ -91,6 +91,17 @@ logs/
 *.log
 
 # -----------------------------------------------------------------------------
+# 小程序 — Uni-app
+# -----------------------------------------------------------------------------
+mini-program/dist/
+mini-program/node_modules/
+mini-program/unpackage/
+mini-program/.hbuilderx/
+mini-program/.sourcemaps/
+mini-program/.vite/
+mini-program/package-lock.json
+
+# -----------------------------------------------------------------------------
 # 后端 — Python / FastAPI
 # -----------------------------------------------------------------------------
 # 虚拟环境

@@ -61,6 +61,8 @@ class Settings(BaseSettings):
         default="redis://127.0.0.1:6379/0",
         description="Redis 连接 URL，如 redis://127.0.0.1:6379/0",
     )
+    wechat_appid: str = Field(default="", description="微信小程序 AppID")
+    wechat_secret: str = Field(default="", description="微信小程序 AppSecret")
 
 
 @lru_cache

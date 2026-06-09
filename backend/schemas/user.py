@@ -23,6 +23,7 @@ class UserAddBody(BaseModel):
     phone: Optional[str] = Field(None, description="手机")
     gender: Optional[str] = Field("3", description="性别字典值，默认 3 未知")
     roleIds: List[int] = Field(default_factory=list, description="角色 ID 列表")
+    agencyId: Optional[int] = Field(None, description="所属鉴定机构 ID，平台用户留空")
 
 
 class UserDeleteBody(BaseModel):
@@ -37,6 +38,7 @@ class UserEditBody(BaseModel):
     phone: Optional[str] = Field(None, description="手机")
     gender: Optional[str] = Field(None, description="性别字典值")
     roleIds: List[int] = Field(default_factory=list, description="角色 ID 列表")
+    agencyId: Optional[int] = Field(None, description="所属鉴定机构 ID，平台用户留空")
 
 
 class UserChangeStatusBody(BaseModel):

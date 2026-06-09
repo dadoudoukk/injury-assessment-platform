@@ -48,6 +48,7 @@ export namespace Login {
     avatar?: string;
     roles?: string[];
     roleName?: string;
+    agencyId?: number | null;
   }
 }
 

@@ -64,6 +64,12 @@ class SysUser(SoftDeleteMixin, Base):
         index=True,
         comment="归属部门，用于数据权限",
     )
+    agency_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("biz_appraisal_agency.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="所属鉴定机构，平台用户为 NULL",
+    )
     username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     password: Mapped[str] = mapped_column(String(128), nullable=False, comment="建议保存加盐哈希")
     nickname: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
@@ -86,6 +92,12 @@ class SysUser(SoftDeleteMixin, Base):
         lazy="selectin",
     )
     dept: Mapped[Optional[SysDept]] = relationship()
+    agency: Mapped[Optional["AppraisalAgency"]] = relationship(
+        "AppraisalAgency",
+        foreign_keys=[agency_id],
+        lazy="selectin",
+        viewonly=True,
+    )
 
 
 class SysRoleDept(Base):

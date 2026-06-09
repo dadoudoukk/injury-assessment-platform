@@ -151,9 +151,11 @@ class CaseRecord(SoftDeleteMixin, Base):
         String(100), nullable=False, index=True, comment="所属保险公司（字典 dict_value，中文名称）"
     )
     status: Mapped[int] = mapped_column(
-        Integer, default=1, nullable=False, index=True, comment="案件状态：1待接单 2鉴定中 3已完成"
+        Integer, default=1, nullable=False, index=True, comment="案件状态：1待接单 2鉴定中 3已完成 4已打回"
     )
     agency_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="鉴定机构ID")
+    rejected_agency_ids: Mapped[Optional[List[Any]]] = mapped_column(JSON, nullable=True, comment="拒单机构 ID 列表 JSON 数组")
+    rework_remark: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="复议打回原因")
     appraisal_amount: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(12, 2), nullable=True, comment="鉴定金额/预估理赔款"
     )
@@ -195,6 +197,31 @@ class AppraisalAgency(SoftDeleteMixin, Base):
     )
     audit_remark: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, comment="审核驳回原因"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )
+
+
+class BizInsuranceCompany(SoftDeleteMixin, Base):
+    """保险公司表（平台级主数据，不参与数据权限）"""
+
+    __tablename__ = "biz_insurance_company"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    company_name: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True, comment="保险公司名称"
+    )
+    contact_person: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="联系人")
+    contact_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, comment="联系电话")
+    status: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False, index=True, comment="状态：1正常 0停用"
+    )
+    remark: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="备注"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"

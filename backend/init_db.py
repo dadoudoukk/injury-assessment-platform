@@ -43,6 +43,7 @@ from models import (  # noqa: F401
     SysConfig,
     SysOperLog,
     SysRole,
+    SysRoleMenu,
     SysUser,
 )
 
@@ -101,6 +102,15 @@ def ensure_sys_user_dept_id_column() -> None:
         "dept_id",
         "ALTER TABLE sys_user ADD COLUMN dept_id INTEGER NULL",
         "ALTER TABLE sys_user ADD COLUMN dept_id INT NULL COMMENT '归属部门'",
+    )
+
+
+def ensure_sys_user_agency_id_column() -> None:
+    _add_column_if_absent(
+        "sys_user",
+        "agency_id",
+        "ALTER TABLE sys_user ADD COLUMN agency_id INTEGER NULL",
+        "ALTER TABLE sys_user ADD COLUMN agency_id INT NULL COMMENT '所属鉴定机构，平台用户为 NULL'",
     )
 
 
@@ -730,6 +740,37 @@ def ensure_role_button_menus(session: Session) -> None:
     )
 
 
+def ensure_case_appraisal_button_menu(session: Session) -> None:
+    """案件管理：补齐 case:appraisal，并同步授权给已拥有 case:edit 的角色。"""
+    ensure_button_menus_under_parent(
+        session,
+        "caseManage",
+        [
+            ("case:appraisal", "出具/修改报告", 4),
+        ],
+    )
+    appraisal = session.query(SysMenu).filter(SysMenu.name == "case:appraisal", SysMenu.is_delete == 0).first()
+    edit_btn = session.query(SysMenu).filter(SysMenu.name == "case:edit", SysMenu.is_delete == 0).first()
+    if not appraisal or not edit_btn:
+        return
+    role_ids = [
+        rid
+        for (rid,) in session.query(SysRoleMenu.role_id)
+        .filter(SysRoleMenu.menu_id == edit_btn.id)
+        .distinct()
+        .all()
+    ]
+    synced = 0
+    for role_id in role_ids:
+        role = session.query(SysRole).filter(SysRole.id == role_id, SysRole.is_delete == 0).first()
+        if role and appraisal not in role.menus:
+            role.menus.append(appraisal)
+            synced += 1
+    session.commit()
+    if synced:
+        print(f"[按钮权限] 已将 case:appraisal 同步授权给 {synced} 个拥有 case:edit 的角色。")
+
+
 def ensure_dict_manage_menu(session: Session) -> None:
     """在「系统管理」下挂「字典管理」并授权 admin；已存在则跳过。"""
     parent = session.query(SysMenu).filter(SysMenu.name == "system").first()
@@ -1027,6 +1068,99 @@ def ensure_root_department_and_backfill(session: Session) -> None:
     print("已检查默认部门「总公司」、admin 部门归属及业务表数据权限字段回填。")
 
 
+def ensure_insurance_manage_menu(session: Session) -> None:
+    """在「业务管理」下挂「保险公司」并授权 admin。"""
+    parent = session.query(SysMenu).filter(SysMenu.name == "business").first()
+    if not parent:
+        print("未找到「业务管理」菜单，跳过保险公司菜单补充。")
+        return
+    child = session.query(SysMenu).filter(SysMenu.name == "insuranceManage").first()
+    if not child:
+        child = SysMenu(
+            parent_id=parent.id,
+            menu_type="MENU",
+            name="insuranceManage",
+            title="保险公司管理",
+            path="/business/insuranceManage",
+            component="/business/insuranceManage/index",
+            icon="Menu",
+            sort=6,
+        )
+        session.add(child)
+        session.flush()
+
+    role = session.query(SysRole).filter(SysRole.code == "admin").first()
+    if role and child not in role.menus:
+        role.menus.append(child)
+    session.commit()
+    print("已检查「业务管理 -> 保险公司管理」菜单并关联超级管理员角色。")
+
+def ensure_insurance_button_menus(session: Session) -> None:
+    """保险公司页的按钮权限。"""
+    ensure_button_menus_under_parent(
+        session,
+        "insuranceManage",
+        [
+            ("insurance:query", "查询", 1),
+            ("insurance:add", "新增", 2),
+            ("insurance:edit", "编辑", 3),
+            ("insurance:delete", "删除", 4),
+        ],
+    )
+
+def ensure_insurance_init_data(session: Session) -> None:
+    from models.business import BizInsuranceCompany
+    from models.dictionary import SysDictData
+    
+    existing = session.query(BizInsuranceCompany).first()
+    if existing:
+        return
+        
+    dict_items = session.query(SysDictData).filter(SysDictData.dict_code == "biz_insurance_company", SysDictData.status == 1).all()
+    for item in dict_items:
+        session.add(BizInsuranceCompany(
+            company_name=item.dict_label,
+            status=1,
+            remark="来自字典迁移"
+        ))
+    session.commit()
+    print("已将 biz_insurance_company 字典数据迁移到实体表。")
+
+def ensure_case_record_rejected_agencies_column() -> None:
+    from sqlalchemy import inspect, text
+
+    try:
+        insp = inspect(engine)
+        cols = [c["name"] for c in insp.get_columns("biz_case_record")]
+    except Exception:
+        return
+    if "rejected_agency_ids" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE biz_case_record ADD COLUMN rejected_agency_ids JSON NULL COMMENT '拒单机构 ID 列表 JSON 数组'"
+            )
+        )
+    print("已为 biz_case_record 表补充 rejected_agency_ids 字段。")
+
+def ensure_case_record_rework_remark_column() -> None:
+    from sqlalchemy import inspect, text
+
+    try:
+        insp = inspect(engine)
+        cols = [c["name"] for c in insp.get_columns("biz_case_record")]
+    except Exception:
+        return
+    if "rework_remark" not in cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE biz_case_record ADD COLUMN rework_remark VARCHAR(255) NULL COMMENT '复议打回原因'"
+                )
+            )
+        print("已为 biz_case_record 表补充 rework_remark 字段。")
+
 async def main() -> None:
     try:
         ensure_tables()
@@ -1034,6 +1168,7 @@ async def main() -> None:
         ensure_biz_news_article_cover_image_column()
         ensure_sys_oper_log_request_param_column()
         ensure_sys_user_dept_id_column()
+        ensure_sys_user_agency_id_column()
         ensure_sys_role_data_scope_column()
         ensure_biz_news_category_data_perm_columns()
         ensure_biz_news_article_data_perm_columns()
@@ -1041,6 +1176,8 @@ async def main() -> None:
         ensure_biz_fragment_content_data_perm_columns()
         ensure_sys_api_extra_columns()
         ensure_sys_menu_api_path_prefix_column()
+        ensure_case_record_rejected_agencies_column()
+        ensure_case_record_rework_remark_column()
         async with AsyncSessionLocal() as session:
             try:
                 await session.run_sync(seed)
@@ -1065,8 +1202,12 @@ async def main() -> None:
                 await session.run_sync(ensure_fragment_category_seed)
                 await session.run_sync(ensure_dict_news_button_menus)
                 await session.run_sync(ensure_role_button_menus)
+                await session.run_sync(ensure_case_appraisal_button_menu)
                 await session.run_sync(ensure_fragment_button_menus)
                 await session.run_sync(ensure_root_department_and_backfill)
+                await session.run_sync(ensure_insurance_manage_menu)
+                await session.run_sync(ensure_insurance_button_menus)
+                await session.run_sync(ensure_insurance_init_data)
             except Exception:
                 await session.rollback()
                 raise

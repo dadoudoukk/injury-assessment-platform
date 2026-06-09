@@ -5,6 +5,7 @@ from api.routers import (
     biz_agency,
     biz_case,
     biz_fragment,
+    biz_insurance,
     biz_news,
     dict_data,
     dict_type,
@@ -27,6 +28,7 @@ router.include_router(dict_data.router)
 router.include_router(biz_news.router)
 router.include_router(biz_case.router)
 router.include_router(biz_agency.router)
+router.include_router(biz_insurance.router)
 router.include_router(biz_fragment.router)
 router.include_router(sys_log.router)
 router.include_router(sys_api.router)

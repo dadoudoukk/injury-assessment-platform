@@ -189,6 +189,7 @@ def user_row(u: SysUser) -> Dict[str, Any]:
     created = u.created_at.strftime("%Y-%m-%d %H:%M:%S") if u.created_at else ""
     role_ids = [r.id for r in (u.roles or [])]
     role_names = [r.name for r in (u.roles or []) if (r.name or "").strip()]
+    agency = getattr(u, "agency", None)
     return {
         "id": str(u.id),
         "username": u.username,
@@ -198,6 +199,8 @@ def user_row(u: SysUser) -> Dict[str, Any]:
         "gender": str(u.gender) if u.gender else "3",
         "roleIds": role_ids,
         "roleNames": role_names,
+        "agencyId": u.agency_id,
+        "agencyName": agency.agency_name if agency else "",
         "idCard": "",
         "email": u.email or "",
         "phone": u.phone or "",
@@ -312,6 +315,7 @@ def case_record_row(r: CaseRecord, agency_name: Optional[str] = None) -> Dict[st
         "appraisalAmount": _format_appraisal_amount(r.appraisal_amount),
         "appraisalConclusion": r.appraisal_conclusion or None,
         "reportFiles": _serialize_report_files(r.report_files),
+        "reworkRemark": r.rework_remark or None,
         "appraisalSubmittedAt": submitted_at or None,
         "appraisalSubmittedBy": r.appraisal_submitted_by,
         "createdAt": created,

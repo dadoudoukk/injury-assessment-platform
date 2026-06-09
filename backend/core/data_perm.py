@@ -10,6 +10,7 @@ from sqlalchemy import false
 from sqlalchemy.sql import Select
 
 from core.context import (
+    ctx_agency_id,
     ctx_allowed_dept_ids,
     ctx_data_scope,
     ctx_is_superuser,
@@ -29,9 +30,14 @@ def apply_data_scope(stmt: Select[Any], model: Type[Any]) -> Select[Any]:
     """
     按 contextvars 中的数据权限为 ``stmt`` 追加条件。
 
+    机构账号（``ctx_agency_id`` 非空）优先按 ``agency_id`` 硬隔离，覆盖部门级逻辑。
     要求受控业务模型具备 ``dept_id``、``created_by`` 字段（与项目规范一致）。
     若未注入数据权限上下文（``ctx_data_scope`` 为 None），则不做修改（兼容未接入的接口）。
     """
+    agency_id = ctx_agency_id.get()
+    if agency_id is not None and _table_has_columns(model, "agency_id"):
+        return stmt.where(model.agency_id == agency_id)
+
     if ctx_is_superuser.get() is True:
         return stmt
 

@@ -29,6 +29,7 @@ export interface CaseRecordRow {
   reportFiles?: ReportFileItem[] | null;
   appraisalSubmittedAt?: string | null;
   appraisalSubmittedBy?: number | null;
+  reworkRemark?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -89,3 +90,16 @@ export const deleteCaseRecord = (id: string) => {
 export const submitCaseAppraisal = (id: string, params: CaseAppraisalSubmit) => {
   return http.post(PORT1 + `/biz/case/${id}/appraisal`, params);
 };
+
+export const exportCaseRecord = (params: CaseRecordListParams) => {
+  return http.download(PORT1 + `/biz/case/export`, params);
+};
+
+export const reworkCaseRecord = (id: string, params: { remark: string }) => {
+  return http.post(PORT1 + `/biz/case/${id}/rework`, params);
+};
+
+export const getCaseStats = () => {
+  return http.get(PORT1 + `/biz/case/stats`);
+};
+

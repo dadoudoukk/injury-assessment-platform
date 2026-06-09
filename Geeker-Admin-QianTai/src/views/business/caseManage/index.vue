@@ -2,22 +2,33 @@
   <div class="table-box">
     <ProTable ref="proTable" :columns="columns" :request-api="getTableList" :data-callback="dataCallback">
       <template #tableHeader>
-        <el-button v-auth="'case:add'" type="primary" :icon="CirclePlus" @click="openAdd">新增案件</el-button>
+        <el-button v-if="canAddCase" type="primary" :icon="CirclePlus" @click="openAdd">新增案件</el-button>
+        <el-button type="warning" plain :icon="Download" @click="downloadFile">导出案件</el-button>
       </template>
       <template #operation="scope">
-        <el-button v-auth="'case:edit'" type="primary" link :icon="EditPen" @click="openEdit(scope.row)">编辑</el-button>
-        <el-button v-auth="'case:delete'" type="danger" link :icon="Delete" @click="deleteOne(scope.row)">删除</el-button>
+        <el-button
+          v-for="action in getCaseRowActions(scope.row)"
+          :key="action.key"
+          :type="action.type ?? 'primary'"
+          link
+          :icon="action.icon"
+          @click="action.onClick(scope.row)"
+        >
+          {{ action.label }}
+        </el-button>
       </template>
     </ProTable>
 
-    <el-dialog
-      v-model="dialogVisible"
-      :title="isEdit ? '编辑案件' : '新增案件'"
-      width="640px"
-      destroy-on-close
-      @closed="resetForm"
-    >
-      <el-form ref="formRef" v-loading="formLoading" :model="form" :rules="rules" label-width="110px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px" destroy-on-close @closed="resetForm">
+      <el-form
+        ref="formRef"
+        v-loading="formLoading"
+        :model="form"
+        :rules="isFormReadonly ? undefined : rules"
+        :disabled="isFormReadonly"
+        :hide-required-asterisk="isFormReadonly"
+        label-width="110px"
+      >
         <el-form-item label="出险报案号" prop="reportNumber">
           <el-input v-model="form.reportNumber" placeholder="请输入出险报案号" clearable maxlength="50" />
         </el-form-item>
@@ -40,6 +51,7 @@
           v-model="form.regionCascader"
           label="报案地区"
           prop="regionCascader"
+          :disabled="isFormReadonly"
           @change="onRegionChange"
         />
         <el-form-item label="事故类型" prop="accidentType">
@@ -57,48 +69,68 @@
             <el-option v-for="item in insuranceCompanyOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="鉴定机构" prop="agencyId">
+        <el-form-item v-if="!isAgencyMode" label="鉴定机构" prop="agencyId">
           <el-select
             v-model="form.agencyId"
-            placeholder="请选择鉴定机构（可清空）"
+            :placeholder="isEdit ? '请选择鉴定机构（可清空）' : '不选将自动就近派单'"
             clearable
             filterable
             style="width: 100%"
           >
-            <el-option
-              v-for="item in agencySelectOptions"
-              :key="item.id"
-              :label="item.agencyName"
-              :value="item.id"
-            />
+            <el-option v-for="item in agencySelectOptions" :key="item.id" :label="item.agencyName" :value="item.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="案件状态" prop="status">
-          <el-select v-model="form.status" placeholder="请选择案件状态" style="width: 100%">
+        <el-form-item v-if="!isFormReadonly && isEdit" label="案件状态" prop="status">
+          <el-select v-model="form.status" placeholder="请选择案件状态" style="width: 100%" disabled>
             <el-option v-for="item in caseStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
       </el-form>
-      <template #footer>
+      <template v-if="!isFormReadonly" #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitLoading" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="reworkDialogVisible" title="复议 / 打回修改" width="500px" destroy-on-close>
+      <el-form :model="reworkForm" ref="reworkFormRef" :rules="reworkRules" label-width="80px">
+        <el-form-item label="打回原因" prop="remark">
+          <el-input
+            v-model="reworkForm.remark"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入打回重做原因或复议意见"
+            maxlength="255"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="reworkDialogVisible = false">取消</el-button>
+        <el-button type="danger" :loading="reworkLoading" @click="submitRework">确认打回</el-button>
+      </template>
+    </el-dialog>
+
+    <CaseAppraisalDrawer ref="appraisalDrawerRef" />
   </div>
 </template>
 
 <script setup lang="tsx" name="caseManage">
 import { computed, onMounted, reactive, ref } from "vue";
-import { CirclePlus, Delete, EditPen } from "@element-plus/icons-vue";
+import { CirclePlus } from "@element-plus/icons-vue";
 import { ElMessage, FormInstance } from "element-plus";
 import type { FormRules } from "element-plus";
 import ProTable from "@/components/ProTable/index.vue";
 import RegionCascader from "@/components/RegionCascader/index.vue";
 import { ColumnProps, ProTableInstance } from "@/components/ProTable/interface";
+import { Download } from "@element-plus/icons-vue";
+import { useDownload } from "@/hooks/useDownload";
 import {
   addCaseRecord,
   deleteCaseRecord,
   editCaseRecord,
+  exportCaseRecord,
+  reworkCaseRecord,
   getCaseRecordDetail,
   getCaseRecordList,
   type CaseRecordForm,
@@ -106,29 +138,44 @@ import {
 } from "@/api/modules/bizCase";
 import { getAgencyOptions, type AgencyOption } from "@/api/modules/bizAgency";
 import { getDictByCode, type DictOption } from "@/api/modules/dict";
+import { getInsuranceAll } from "@/api/modules/bizInsurance";
 import { useHandleData } from "@/hooks/useHandleData";
+import { useTenantMode } from "@/hooks/useTenantMode";
 import { decodeRegion, encodeRegion, formatRegionText, validateRegion } from "@/utils/region";
+import CaseAppraisalDrawer from "./CaseAppraisalDrawer.vue";
+import { useCaseActions, type AppraisalDrawerMode } from "./useCaseActions";
 
 const caseStatusOptions = [
   { label: "待接单", value: 1, tagType: "warning" },
   { label: "鉴定中", value: 2, tagType: "primary" },
-  { label: "已完成", value: 3, tagType: "success" }
+  { label: "已完成", value: 3, tagType: "success" },
+  { label: "已打回", value: 4, tagType: "danger" }
 ];
 
 const caseStatusMap: Record<number, { label: string; tagType: string }> = {
   1: { label: "待接单", tagType: "warning" },
   2: { label: "鉴定中", tagType: "primary" },
-  3: { label: "已完成", tagType: "success" }
+  3: { label: "已完成", tagType: "success" },
+  4: { label: "已打回", tagType: "danger" }
 };
 
 const ORPHAN_AGENCY_SUFFIX = " (已不可用)";
 
+const { isAgencyMode } = useTenantMode();
+
 const proTable = ref<ProTableInstance>();
+const appraisalDrawerRef = ref<InstanceType<typeof CaseAppraisalDrawer> | null>(null);
 const dialogVisible = ref(false);
 const isEdit = ref(false);
+const isView = ref(false);
 const formRef = ref<FormInstance>();
 const formLoading = ref(false);
 const submitLoading = ref(false);
+
+const dialogTitle = computed(() => {
+  if (isView.value) return "案件详情";
+  return isEdit.value ? "编辑案件" : "新增案件";
+});
 
 const accidentTypeOptions = ref<DictOption[]>([]);
 const injuryTypeOptions = ref<DictOption[]>([]);
@@ -165,12 +212,15 @@ onMounted(async () => {
   const [accidentRes, injuryRes, insuranceRes, agencyRes] = await Promise.all([
     getDictByCode("biz_accident_type"),
     getDictByCode("biz_injury_type"),
-    getDictByCode("biz_insurance_company"),
+    getInsuranceAll(),
     getAgencyOptions()
   ]);
   accidentTypeOptions.value = accidentRes.data;
   injuryTypeOptions.value = injuryRes.data;
-  insuranceCompanyOptions.value = insuranceRes.data;
+  insuranceCompanyOptions.value = (insuranceRes.data || []).map(item => ({
+    dictLabel: item.companyName,
+    dictValue: item.companyName
+  }));
   agencyOptions.value = agencyRes.data.list || [];
 });
 
@@ -296,14 +346,30 @@ const getTableList = (params: any) => {
   return getCaseRecordList(formatted);
 };
 
+const downloadFile = async () => {
+  const params = proTable.value?.searchParam || {};
+  const formatted = formatListParams(JSON.parse(JSON.stringify(params)));
+  useDownload(exportCaseRecord, "案件列表", formatted);
+};
+
 const openAdd = () => {
+  if (isAgencyMode.value) {
+    ElMessage.error("无权操作");
+    return;
+  }
   isEdit.value = false;
+  isView.value = false;
   resetAgencySelectOptions();
   dialogVisible.value = true;
 };
 
 const openEdit = async (row: CaseRecordRow) => {
+  if (isAgencyMode.value) {
+    ElMessage.error("无权操作");
+    return;
+  }
   isEdit.value = true;
+  isView.value = false;
   dialogVisible.value = true;
   formLoading.value = true;
   try {
@@ -314,6 +380,29 @@ const openEdit = async (row: CaseRecordRow) => {
   } finally {
     formLoading.value = false;
   }
+};
+
+const openViewDetail = async (row: CaseRecordRow) => {
+  isEdit.value = true;
+  isView.value = true;
+  dialogVisible.value = true;
+  formLoading.value = true;
+  try {
+    const res = await getCaseRecordDetail(row.id);
+    fillFormFromRow(res.data);
+  } catch {
+    dialogVisible.value = false;
+  } finally {
+    formLoading.value = false;
+  }
+};
+
+const openAppraisalDrawer = (row: CaseRecordRow, mode: AppraisalDrawerMode) => {
+  appraisalDrawerRef.value?.acceptParams({
+    mode,
+    caseId: row.id,
+    refresh: () => proTable.value?.getTableList()
+  });
 };
 
 const resetForm = () => {
@@ -333,10 +422,12 @@ const resetForm = () => {
   form.agencyId = "";
   resetAgencySelectOptions();
   isEdit.value = false;
+  isView.value = false;
   formRef.value?.clearValidate();
 };
 
 const submitForm = () => {
+  if (isFormReadonly.value) return;
   formRef.value?.validate(async valid => {
     if (!valid) return;
     const payload = buildSubmitPayload();
@@ -364,7 +455,49 @@ const deleteOne = async (row: CaseRecordRow) => {
   proTable.value?.getTableList();
 };
 
-const columns = reactive<ColumnProps<CaseRecordRow>[]>([
+const reworkDialogVisible = ref(false);
+const reworkLoading = ref(false);
+const reworkFormRef = ref<FormInstance>();
+const reworkForm = reactive({
+  id: "",
+  remark: ""
+});
+const reworkRules = reactive<FormRules>({
+  remark: [{ required: true, message: "请输入打回原因", trigger: "blur" }]
+});
+
+const openRework = (row: CaseRecordRow) => {
+  reworkForm.id = row.id;
+  reworkForm.remark = "";
+  reworkDialogVisible.value = true;
+};
+
+const submitRework = async () => {
+  if (!reworkFormRef.value) return;
+  await reworkFormRef.value.validate();
+
+  reworkLoading.value = true;
+  try {
+    await reworkCaseRecord(reworkForm.id, { remark: reworkForm.remark });
+    ElMessage.success("案件已打回");
+    reworkDialogVisible.value = false;
+    proTable.value?.getTableList();
+  } finally {
+    reworkLoading.value = false;
+  }
+};
+
+const { getCaseRowActions, canAddCase } = useCaseActions({
+  openEdit,
+  openViewDetail,
+  openAppraisalDrawer,
+  deleteOne,
+  openRework
+});
+
+const isFormReadonly = computed(() => isView.value || isAgencyMode.value);
+
+const baseColumns: ColumnProps<CaseRecordRow>[] = [
   { type: "index", label: "#", width: 56 },
   {
     prop: "reportNumber",
@@ -402,7 +535,15 @@ const columns = reactive<ColumnProps<CaseRecordRow>[]>([
     label: "保险公司",
     minWidth: 110,
     isFilterEnum: false,
-    enum: () => getDictByCode("biz_insurance_company"),
+    enum: async () => {
+      const res = await getInsuranceAll();
+      return {
+        data: (res.data || []).map(item => ({
+          dictLabel: item.companyName,
+          dictValue: item.companyName
+        }))
+      };
+    },
     search: { el: "select", props: { placeholder: "请选择保险公司", filterable: true } }
   },
   {
@@ -426,6 +567,13 @@ const columns = reactive<ColumnProps<CaseRecordRow>[]>([
       return <el-tag type={item.tagType}>{item.label}</el-tag>;
     }
   },
-  { prop: "operation", label: "操作", fixed: "right", width: 160 }
-]);
+  { prop: "operation", label: "操作", fixed: "right", width: 280 }
+];
+
+const columns = computed(() => {
+  if (isAgencyMode.value) {
+    return baseColumns.filter(col => col.prop !== "agencyId");
+  }
+  return baseColumns;
+});
 </script>
