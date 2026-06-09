@@ -1,98 +1,98 @@
 <template>
   <view class="detail-container" v-if="caseDetail">
-    <!-- 顶部状态栏 -->
-    <view class="status-header" :class="'bg-status-' + caseDetail.status">
-      <view class="status-text">
-        <text class="icon" v-if="caseDetail.status === 3">✅</text>
-        <text class="icon" v-else-if="caseDetail.status === 4">⚠️</text>
-        <text class="icon" v-else-if="caseDetail.status === 2">⏳</text>
-        <text class="icon" v-else>📝</text>
-        <text>{{ getStatusText(caseDetail.status) }}</text>
+    <view class="header-section">
+      <view class="status-wrapper">
+        <text :class="['status-title', 'text-status-' + caseDetail.status]">
+          {{ getStatusText(caseDetail.status) }}
+        </text>
+        <text class="report-no">报案号：{{ caseDetail.reportNumber }}</text>
       </view>
-      <text class="report-no">报案号：{{ caseDetail.reportNumber }}</text>
     </view>
 
-    <!-- 基础信息卡片 (只读) -->
-    <view class="card-box">
-      <view class="card-title">案件基础信息</view>
+    <!-- 基础信息区 -->
+    <view class="section-block">
+      <view class="section-title">案件基础信息</view>
+      
       <view class="info-list">
         <view class="info-item" v-if="caseDetail.status === 4 && caseDetail.reworkRemark">
-          <text class="label" style="color: #ff4d4f">打回原因</text>
-          <text class="value" style="color: #ff4d4f; font-weight: bold">{{ caseDetail.reworkRemark }}</text>
+          <text class="info-label text-red">打回原因</text>
+          <text class="info-value text-red font-bold">{{ caseDetail.reworkRemark }}</text>
         </view>
         <view class="info-item">
-          <text class="label">伤者姓名</text>
-          <text class="value">{{ caseDetail.victimName }}</text>
+          <text class="info-label">伤者姓名</text>
+          <text class="info-value">{{ caseDetail.victimName }}</text>
         </view>
         <view class="info-item">
-          <text class="label">联系电话</text>
-          <text class="value phone" @click="callPhone(caseDetail.victimPhone)">
-            {{ caseDetail.victimPhone }} <text class="iconfont">📞</text>
+          <text class="info-label">联系电话</text>
+          <text class="info-value text-blue" @click="callPhone(caseDetail.victimPhone)">
+            {{ caseDetail.victimPhone }}
           </text>
         </view>
         <view class="info-item">
-          <text class="label">出险地点</text>
-          <text class="value">{{ caseDetail.province }}{{ caseDetail.city }}{{ caseDetail.district }}</text>
+          <text class="info-label">出险地点</text>
+          <text class="info-value">{{ caseDetail.province }}{{ caseDetail.city }}{{ caseDetail.district }}</text>
         </view>
         <view class="info-item">
-          <text class="label">报案日期</text>
-          <text class="value">{{ caseDetail.reportDate }}</text>
+          <text class="info-label">报案日期</text>
+          <text class="info-value">{{ caseDetail.reportDate }}</text>
         </view>
         <view class="info-item">
-          <text class="label">保险公司</text>
-          <text class="value">{{ caseDetail.insuranceCompany }}</text>
+          <text class="info-label">保险公司</text>
+          <text class="info-value">{{ caseDetail.insuranceCompany }}</text>
         </view>
       </view>
     </view>
 
-    <!-- 鉴定工作区 (填表与传图) -->
-    <view class="card-box" v-if="caseDetail.status === 2 || caseDetail.status === 3 || caseDetail.status === 4">
-      <view class="card-title">鉴定文书与结论</view>
+    <!-- 鉴定工作区 -->
+    <view class="section-block" v-if="caseDetail.status === 2 || caseDetail.status === 3 || caseDetail.status === 4">
+      <view class="section-title">鉴定文书与结论</view>
       
-      <!-- 待接单 (显示拒单按钮) -->
+      <!-- 待接单 -->
       <template v-if="caseDetail.status === 1 && !isPatientMode">
-        <view class="action-buttons">
-          <button class="action-btn reject" :loading="submitLoading" @click="handleReject">拒绝接单，退回平台</button>
+        <view class="action-buttons mt-40">
+          <button class="btn-outline-danger" :loading="submitLoading" @click="handleReject">拒绝接单，退回平台</button>
         </view>
       </template>
 
       <!-- 鉴定中/已打回 (可编辑) -->
       <template v-if="caseDetail.status === 2 || caseDetail.status === 4">
-        <view class="form-item">
+        <view class="form-group">
           <text class="form-label required">预估理赔金额(元)</text>
           <input 
             class="form-input" 
             type="digit" 
             v-model="form.appraisalAmount" 
             placeholder="请输入金额" 
+            placeholder-class="ph-color"
           />
         </view>
         
-        <view class="form-item">
+        <view class="form-group">
           <text class="form-label required">鉴定结论</text>
           <textarea 
             class="form-textarea" 
             v-model="form.appraisalConclusion" 
             placeholder="请详细描述伤情和鉴定结论..." 
             maxlength="1000"
+            placeholder-class="ph-color"
           ></textarea>
         </view>
 
-        <view class="form-item">
+        <view class="form-group">
           <text class="form-label required">相关附件(图片/视频)</text>
           <view class="upload-grid">
             <view class="upload-item" v-for="(file, index) in form.reportFiles" :key="index">
               <image class="upload-img" :src="file.url" mode="aspectFill"></image>
-              <view class="delete-btn" @click="removeFile(index)">✖</view>
+              <view class="delete-btn" @click="removeFile(index)">✕</view>
             </view>
             <view class="upload-btn" @click="chooseMedia" v-if="form.reportFiles.length < 9">
               <text class="add-icon">+</text>
-              <text class="add-text">上传</text>
+              <text class="add-text">上传附件</text>
             </view>
           </view>
         </view>
 
-        <button class="submit-btn" :loading="submitLoading" @click="submitAppraisal">
+        <button class="btn-primary mt-60" :loading="submitLoading" @click="submitAppraisal">
           提交鉴定结果
         </button>
       </template>
@@ -101,15 +101,15 @@
       <template v-if="caseDetail.status === 3">
         <view class="info-list">
           <view class="info-item">
-            <text class="label">理赔金额</text>
-            <text class="value highlight">￥{{ caseDetail.appraisalAmount }}</text>
+            <text class="info-label">理赔金额</text>
+            <text class="info-value highlight">¥{{ caseDetail.appraisalAmount }}</text>
           </view>
           <view class="info-item col-item">
-            <text class="label">鉴定结论</text>
-            <text class="value desc-box">{{ caseDetail.appraisalConclusion }}</text>
+            <text class="info-label mb-16">鉴定结论</text>
+            <view class="readonly-box">{{ caseDetail.appraisalConclusion }}</view>
           </view>
           <view class="info-item col-item" v-if="caseDetail.reportFiles && caseDetail.reportFiles.length > 0">
-            <text class="label">相关附件</text>
+            <text class="info-label mb-16">相关附件</text>
             <view class="preview-grid">
               <image 
                 class="preview-img" 
@@ -128,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { request } from '@/utils/request'
 import { useUserStore } from '@/store/modules/user'
@@ -137,6 +137,11 @@ const userStore = useUserStore()
 const caseId = ref('')
 const caseDetail = ref<any>(null)
 const submitLoading = ref(false)
+
+const isPatientMode = computed(() => {
+  const roleName = userStore.userInfo?.roleName || ''
+  return !roleName.includes('机构') && !roleName.includes('管理员')
+})
 
 const form = reactive({
   appraisalAmount: '',
@@ -174,23 +179,21 @@ const callPhone = (phone: string) => {
   uni.makePhoneCall({ phoneNumber: phone })
 }
 
-// 选择图片/视频上传
 const chooseMedia = () => {
   uni.chooseMedia({
     count: 9 - form.reportFiles.length,
     mediaType: ['image', 'video'],
     sourceType: ['album', 'camera'],
-    sizeType: ['compressed'], // 优先使用系统压缩
+    sizeType: ['compressed'],
     success: async (res) => {
       const tempFiles = res.tempFiles
       for (const file of tempFiles) {
         if (file.fileType === 'image') {
-          // 对图片进行二次压缩，防止过大
           try {
             const compressRes = await new Promise<any>((resolve, reject) => {
               uni.compressImage({
                 src: file.tempFilePath,
-                quality: 80, // 压缩质量，0-100
+                quality: 80,
                 success: resolve,
                 fail: reject
               })
@@ -201,7 +204,6 @@ const chooseMedia = () => {
             uploadFile(file.tempFilePath)
           }
         } else {
-          // 视频直接上传
           uploadFile(file.tempFilePath)
         }
       }
@@ -261,7 +263,6 @@ const submitAppraisal = async () => {
       reportFiles: form.reportFiles
     })
     uni.showToast({ title: '提交成功', icon: 'success' })
-    // 重新获取详情展示最新状态
     fetchDetail()
   } catch (error) {
     console.error('Submit appraisal error:', error)
@@ -273,7 +274,6 @@ const submitAppraisal = async () => {
 const handleAccept = async () => {
   submitLoading.value = true
   try {
-    // 假设更新状态到 2（鉴定中）
     await request(`/biz/case/${caseId.value}/accept`, 'POST')
     uni.showToast({ title: '已接单', icon: 'success' })
     fetchDetail()
@@ -288,6 +288,7 @@ const handleReject = () => {
   uni.showModal({
     title: '确认拒单',
     content: '拒单后将把该案件退回平台重新派单，是否确认？',
+    confirmColor: '#DC2626',
     success: async (res) => {
       if (res.confirm) {
         submitLoading.value = true
@@ -319,224 +320,259 @@ const previewImage = (currentUrl: string, files: any[]) => {
 <style scoped>
 .detail-container {
   min-height: 100vh;
-  background-color: #f4f7f6;
-  padding-bottom: 60rpx;
+  background-color: #F9FAFB;
+  padding-bottom: 80rpx;
 }
 
-.status-header {
-  padding: 40rpx 40rpx 60rpx;
-  color: #fff;
+.header-section {
+  background-color: #FFFFFF;
+  padding: 60rpx 40rpx;
+  border-bottom: 2rpx solid #E5E7EB;
+}
+
+.status-wrapper {
   display: flex;
   flex-direction: column;
 }
-.bg-status-1 {
-  background: linear-gradient(135deg, #f59a23 0%, #f7b733 100%);
+
+.status-title {
+  font-size: 56rpx;
+  font-weight: 600;
+  margin-bottom: 16rpx;
 }
-.bg-status-2 {
-  background: linear-gradient(135deg, #0ba360 0%, #3cba92 100%);
-}
-.bg-status-3 {
-  background: linear-gradient(135deg, #8ba89f 0%, #a4babb 100%);
-}
-.bg-status-4 {
-  background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%);
-}
-.status-text {
-  font-size: 40rpx;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-}
-.status-text .icon {
-  margin-right: 16rpx;
-}
+
+.text-status-1 { color: #D97706; }
+.text-status-2 { color: #2563EB; }
+.text-status-3 { color: #111827; }
+.text-status-4 { color: #DC2626; }
+
 .report-no {
-  font-size: 26rpx;
-  margin-top: 16rpx;
-  opacity: 0.9;
+  font-size: 28rpx;
+  color: #6B7280;
+  font-family: consolas, monospace;
 }
 
-/* 卡片公共样式 */
-.card-box {
-  background-color: #ffffff;
-  border-radius: 24rpx;
-  margin: -30rpx 30rpx 30rpx;
-  padding: 30rpx;
-  box-shadow: 0 8rpx 20rpx rgba(0,0,0,0.04);
-  position: relative;
-  z-index: 10;
+.section-block {
+  background-color: #FFFFFF;
+  margin-top: 24rpx;
+  padding: 40rpx;
+  border-top: 2rpx solid #E5E7EB;
+  border-bottom: 2rpx solid #E5E7EB;
 }
-.card-title {
+
+.section-title {
   font-size: 32rpx;
-  font-weight: bold;
-  color: #333;
-  margin-bottom: 30rpx;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 40rpx;
   padding-left: 16rpx;
-  border-left: 8rpx solid #0ba360;
+  border-left: 6rpx solid #111827;
 }
 
-/* 信息列表 */
 .info-list {
   display: flex;
   flex-direction: column;
 }
+
 .info-item {
   display: flex;
   justify-content: space-between;
-  padding: 20rpx 0;
-  border-bottom: 1rpx solid #f5f5f5;
+  padding: 30rpx 0;
+  border-bottom: 2rpx solid #F3F4F6;
 }
+
 .info-item:last-child {
   border-bottom: none;
 }
+
 .info-item.col-item {
   flex-direction: column;
-  justify-content: flex-start;
   align-items: flex-start;
 }
-.label {
-  color: #999;
-  font-size: 28rpx;
-  min-width: 140rpx;
+
+.info-label {
+  color: #6B7280;
+  font-size: 30rpx;
+  min-width: 160rpx;
 }
-.value {
-  color: #333;
-  font-size: 28rpx;
+
+.info-value {
+  color: #111827;
+  font-size: 30rpx;
   text-align: right;
   flex: 1;
 }
-.value.phone {
-  color: #0ba360;
-  font-weight: bold;
+
+.text-blue { color: #2563EB; }
+.text-red { color: #DC2626; }
+.font-bold { font-weight: 500; }
+
+.highlight {
+  color: #111827;
+  font-size: 36rpx;
+  font-weight: 600;
 }
-.value.highlight {
-  color: #f5222d;
-  font-size: 32rpx;
-  font-weight: bold;
+
+.mb-16 {
+  margin-bottom: 16rpx;
 }
-.desc-box {
-  text-align: left;
-  margin-top: 16rpx;
-  background-color: #f9f9f9;
-  padding: 20rpx;
-  border-radius: 12rpx;
+
+.readonly-box {
+  background-color: #F9FAFB;
+  padding: 30rpx;
+  border: 2rpx solid #E5E7EB;
+  border-radius: 4rpx;
   width: 100%;
   box-sizing: border-box;
+  color: #374151;
+  font-size: 28rpx;
+  line-height: 1.6;
 }
 
 /* 表单样式 */
-.form-item {
-  margin-bottom: 40rpx;
+.form-group {
+  margin-bottom: 60rpx;
 }
+
 .form-label {
-  font-size: 28rpx;
-  color: #333;
-  margin-bottom: 20rpx;
   display: block;
+  font-size: 28rpx;
+  color: #374151;
+  font-weight: 500;
+  margin-bottom: 20rpx;
 }
+
 .form-label.required::after {
-  content: '*';
-  color: red;
-  margin-left: 8rpx;
+  content: " *";
+  color: #DC2626;
 }
+
 .form-input {
-  background-color: #f8f9fa;
-  height: 80rpx;
-  border-radius: 12rpx;
-  padding: 0 24rpx;
-  font-size: 28rpx;
-}
-.form-textarea {
-  background-color: #f8f9fa;
   width: 100%;
-  height: 200rpx;
-  border-radius: 12rpx;
+  height: 80rpx;
+  font-size: 32rpx;
+  color: #111827;
+  border-bottom: 2rpx solid #E5E7EB;
+  transition: all 0.3s;
+}
+
+.form-textarea {
+  width: 100%;
+  height: 240rpx;
+  font-size: 30rpx;
+  color: #111827;
+  background-color: #FFFFFF;
+  border: 2rpx solid #E5E7EB;
+  border-radius: 4rpx;
   padding: 24rpx;
-  font-size: 28rpx;
   box-sizing: border-box;
 }
 
-/* 上传图片区 */
-.upload-grid, .preview-grid {
+.form-input:focus, .form-textarea:focus {
+  border-color: #111827;
+}
+
+.ph-color {
+  color: #9CA3AF;
+}
+
+/* 上传区域 */
+.upload-grid {
   display: flex;
   flex-wrap: wrap;
-  margin-top: 16rpx;
+  gap: 20rpx;
 }
+
 .upload-item, .preview-img, .upload-btn {
-  width: 180rpx;
-  height: 180rpx;
-  border-radius: 12rpx;
-  margin-right: 20rpx;
-  margin-bottom: 20rpx;
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 4rpx;
 }
+
 .upload-item {
   position: relative;
 }
+
 .upload-img, .preview-img {
   width: 100%;
   height: 100%;
-  border-radius: 12rpx;
+  border-radius: 4rpx;
 }
+
 .delete-btn {
   position: absolute;
-  top: -10rpx;
-  right: -10rpx;
+  top: -16rpx;
+  right: -16rpx;
   width: 40rpx;
   height: 40rpx;
-  background-color: rgba(0,0,0,0.5);
-  color: #fff;
+  background-color: #FFFFFF;
+  color: #111827;
+  border: 2rpx solid #E5E7EB;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20rpx;
+  font-size: 24rpx;
   z-index: 2;
+  box-shadow: 0 2rpx 4rpx rgba(0,0,0,0.1);
 }
+
 .upload-btn {
-  background-color: #f5f5f5;
-  border: 2rpx dashed #ddd;
+  background-color: #F9FAFB;
+  border: 2rpx dashed #D1D5DB;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #999;
-}
-.add-icon {
-  font-size: 60rpx;
-  font-weight: 300;
-  margin-bottom: 10rpx;
-  line-height: 1;
-}
-.add-text {
-  font-size: 24rpx;
 }
 
-.submit-btn {
-  background: linear-gradient(90deg, #0ba360 0%, #3cba92 100%);
-  color: #ffffff;
-  border-radius: 50rpx;
-  height: 90rpx;
-  line-height: 90rpx;
-  font-size: 32rpx;
-  margin-top: 60rpx;
+.add-icon {
+  font-size: 40rpx;
+  color: #9CA3AF;
+  margin-bottom: 8rpx;
 }
-.action-buttons {
+
+.add-text {
+  font-size: 24rpx;
+  color: #6B7280;
+}
+
+.preview-grid {
   display: flex;
-  justify-content: space-between;
-  margin-top: 40rpx;
+  flex-wrap: wrap;
+  gap: 20rpx;
 }
-.action-buttons .action-btn {
-  width: 48%;
-  font-size: 30rpx;
-  border-radius: 40rpx;
+
+/* 按钮 */
+.btn-primary {
+  background-color: #2563EB;
+  color: #FFFFFF;
+  font-size: 32rpx;
+  font-weight: 500;
+  height: 96rpx;
+  line-height: 96rpx;
+  border-radius: 8rpx;
 }
-.action-buttons .accept {
-  background-color: #0ba360;
-  color: #fff;
+
+.btn-primary::after {
+  display: none;
 }
-.action-buttons .reject {
-  background-color: #fff;
-  color: #ff4d4f;
-  border: 2rpx solid #ff4d4f;
+
+.btn-outline-danger {
+  background-color: #FFFFFF;
+  color: #DC2626;
+  font-size: 32rpx;
+  font-weight: 500;
+  height: 96rpx;
+  line-height: 96rpx;
+  border: 2rpx solid #DC2626;
+  border-radius: 8rpx;
 }
+
+.btn-outline-danger::after {
+  display: none;
+}
+
+.mt-40 { margin-top: 40rpx; }
+.mt-60 { margin-top: 60rpx; }
 </style>

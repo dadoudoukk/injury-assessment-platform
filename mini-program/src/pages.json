@@ -1,73 +1,74 @@
 {
-	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
-		{
-			"path": "pages/patient/home",
-			"style": {
-				"navigationBarTitleText": "人伤鉴定服务大厅",
-				"navigationBarBackgroundColor": "#0ba360",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
-			"path": "pages/patient/create",
-			"style": {
-				"navigationBarTitleText": "我要报案",
-				"navigationBarBackgroundColor": "#0ba360",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
-			"path": "pages/patient/list",
-			"style": {
-				"navigationBarTitleText": "我的案件",
-				"navigationBarBackgroundColor": "#0ba360",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
-			"path": "pages/login/index",
-			"style": {
-				"navigationBarTitleText": "登录"
-			}
-		},
-		{
-			"path": "pages/index/index",
-			"style": {
-				"navigationBarTitleText": "我的工作台",
-				"enablePullDownRefresh": true,
-				"navigationBarBackgroundColor": "#0ba360",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
-			"path": "pages/detail/index",
-			"style": {
-				"navigationBarTitleText": "案件详情",
-				"navigationBarBackgroundColor": "#0ba360",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
-			"path": "pages/mine/index",
-			"style": {
-				"navigationBarTitleText": "个人中心",
-				"navigationBarBackgroundColor": "#0ba360",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
-			"path": "pages/agency/register",
-			"style": {
-				"navigationBarTitleText": "机构入驻",
-				"navigationBarBackgroundColor": "#0ba360",
-				"navigationBarTextStyle": "white"
-			}
-		}
-	],
-	"globalStyle": {
-		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "uni-app",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
-	}
+  "pages": [
+    //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+    {
+      "path": "pages/patient/home",
+      "style": {
+        "navigationBarTitleText": "人伤鉴定服务大厅",
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/patient/create",
+      "style": {
+        "navigationBarTitleText": "我要报案",
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/patient/list",
+      "style": {
+        "navigationBarTitleText": "我的案件",
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationBarTitleText": "登录"
+      }
+    },
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "我的工作台",
+        "enablePullDownRefresh": true,
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/detail/index",
+      "style": {
+        "navigationBarTitleText": "案件详情",
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/mine/index",
+      "style": {
+        "navigationBarTitleText": "个人中心",
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/agency/register",
+      "style": {
+        "navigationBarTitleText": "机构入驻",
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "uni-app",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "backgroundColor": "#F4F6F8"
+  }
 }

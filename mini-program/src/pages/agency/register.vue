@@ -1,42 +1,47 @@
 <template>
   <view class="container">
-    <view class="header-banner">
-      <view class="title">机构入驻申请</view>
-      <view class="subtitle">请填写真实的鉴定机构信息，平台审核通过后即可入驻接单</view>
+    <view class="header-section">
+      <text class="page-title">机构入驻申请</text>
+      <text class="page-subtitle">请填写真实的鉴定机构信息，平台审核通过后即可入驻接单</text>
     </view>
 
-    <view class="form-card">
-      <view class="form-item">
-        <text class="form-label required">机构名称</text>
-        <input v-model="form.agencyName" class="form-input" placeholder="请输入机构完整名称" maxlength="100" />
+    <view class="form-section">
+      <view class="input-group">
+        <text class="label required">机构名称</text>
+        <input v-model="form.agencyName" class="input-field" placeholder="请输入机构完整名称" maxlength="100" placeholder-class="ph-color" />
       </view>
 
-      <view class="form-item">
-        <text class="form-label required">联系人</text>
-        <input v-model="form.contactPerson" class="form-input" placeholder="请输入联系人姓名" maxlength="50" />
+      <view class="input-group">
+        <text class="label required">联系人</text>
+        <input v-model="form.contactPerson" class="input-field" placeholder="请输入联系人姓名" maxlength="50" placeholder-class="ph-color" />
       </view>
 
-      <view class="form-item">
-        <text class="form-label required">联系电话</text>
-        <input v-model="form.contactPhone" class="form-input" type="number" placeholder="请输入手机号" maxlength="20" />
+      <view class="input-group">
+        <text class="label required">联系电话</text>
+        <input v-model="form.contactPhone" class="input-field" type="number" placeholder="请输入手机号" maxlength="20" placeholder-class="ph-color" />
       </view>
 
-      <view class="form-item">
-        <text class="form-label required">所在省份</text>
-        <input v-model="form.province" class="form-input" placeholder="例如：浙江省" />
-      </view>
-      <view class="form-item">
-        <text class="form-label required">所在城市</text>
-        <input v-model="form.city" class="form-input" placeholder="例如：杭州市" />
-      </view>
-      <view class="form-item">
-        <text class="form-label required">所在区县</text>
-        <input v-model="form.district" class="form-input" placeholder="例如：西湖区" />
+      <view class="input-group">
+        <text class="label required">所在地区</text>
+        <picker mode="region" @change="onRegionChange">
+          <view class="picker-field">
+            <text :class="form.province ? 'text-black' : 'ph-color'">
+              {{ form.province ? `${form.province} ${form.city} ${form.district}` : '请选择省/市/区' }}
+            </text>
+            <view class="arrow"></view>
+          </view>
+        </picker>
       </view>
 
-      <view class="form-item">
-        <text class="form-label required">详细地址</text>
-        <textarea v-model="form.address" class="form-textarea" placeholder="请输入详细的办公地址" maxlength="255"></textarea>
+      <view class="input-group">
+        <view class="label-row">
+          <text class="label required" style="margin-bottom: 0;">详细地址</text>
+          <view class="location-btn" @click="chooseLocation">
+            <text class="location-icon">📍</text>
+            <text>地图选择</text>
+          </view>
+        </view>
+        <textarea v-model="form.address" class="textarea-field" placeholder="请输入详细的办公地址" maxlength="255" placeholder-class="ph-color"></textarea>
       </view>
 
       <button class="submit-btn" :loading="loading" @click="submitForm">提交申请</button>
@@ -60,6 +65,30 @@ const form = reactive({
   address: ''
 })
 
+const onRegionChange = (e: any) => {
+  const [province, city, district] = e.detail.value;
+  form.province = province;
+  form.city = city;
+  form.district = district;
+}
+
+const chooseLocation = () => {
+  uni.chooseLocation({
+    success: (res) => {
+      if (res.address || res.name) {
+        let fullAddress = res.address || '';
+        if (res.name && !fullAddress.includes(res.name)) {
+          fullAddress += ` ${res.name}`;
+        }
+        form.address = fullAddress.trim();
+      }
+    },
+    fail: (err) => {
+      console.log('chooseLocation err:', err)
+    }
+  })
+}
+
 const submitForm = async () => {
   if (!form.agencyName.trim()) return uni.showToast({ title: '请输入机构名称', icon: 'none' })
   if (!form.contactPerson.trim()) return uni.showToast({ title: '请输入联系人', icon: 'none' })
@@ -72,17 +101,16 @@ const submitForm = async () => {
   loading.value = true
   try {
     const res = await request('/biz/agency/register', 'POST', form)
-    // res 只有成功的时候才有返回值或者在 request 拦截中抛出
     uni.showModal({
       title: '提交成功',
       content: '您的入驻申请已提交，请耐心等待平台审核。审核通过后将通过短信告知您登录账号。',
       showCancel: false,
+      confirmColor: '#2563EB',
       success: () => {
         uni.navigateBack()
       }
     })
   } catch (error) {
-    // 报错已在 request 中拦截并显示 toast
   } finally {
     loading.value = false
   }
@@ -92,84 +120,141 @@ const submitForm = async () => {
 <style scoped>
 .container {
   min-height: 100vh;
-  background-color: #f4f7f6;
-  padding-bottom: 60rpx;
+  background-color: #FFFFFF;
+  padding: 60rpx;
 }
 
-.header-banner {
-  background: linear-gradient(135deg, #0ba360 0%, #3cba92 100%);
-  padding: 60rpx 40rpx 80rpx;
-  color: #fff;
+.header-section {
+  margin-bottom: 80rpx;
 }
 
-.title {
+.page-title {
+  display: block;
   font-size: 48rpx;
-  font-weight: bold;
+  font-weight: 600;
+  color: #111827;
   margin-bottom: 16rpx;
 }
 
-.subtitle {
-  font-size: 28rpx;
-  opacity: 0.9;
-}
-
-.form-card {
-  margin: -40rpx 30rpx 0;
-  background-color: #fff;
-  border-radius: 20rpx;
-  padding: 30rpx;
-  box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.05);
-}
-
-.form-item {
-  margin-bottom: 30rpx;
-}
-
-.form-label {
+.page-subtitle {
   display: block;
   font-size: 28rpx;
-  color: #333;
-  margin-bottom: 16rpx;
+  color: #6B7280;
+}
+
+.form-section {
+  width: 100%;
+}
+
+.input-group {
+  margin-bottom: 60rpx;
+}
+
+.label {
+  display: block;
+  font-size: 28rpx;
+  color: #374151;
   font-weight: 500;
+  margin-bottom: 20rpx;
 }
 
-.required::after {
-  content: "*";
-  color: #ff4d4f;
-  margin-left: 8rpx;
+.label.required::after {
+  content: " *";
+  color: #DC2626;
 }
 
-.form-input {
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.location-btn {
+  display: flex;
+  align-items: center;
+  font-size: 26rpx;
+  color: #2563EB;
+  background-color: #EFF6FF;
+  padding: 6rpx 16rpx;
+  border-radius: 20rpx;
+}
+
+.location-icon {
+  margin-right: 6rpx;
+  font-size: 24rpx;
+}
+
+.input-field {
   width: 100%;
   height: 80rpx;
-  background-color: #f8f9fa;
-  border-radius: 12rpx;
-  padding: 0 24rpx;
-  font-size: 28rpx;
+  font-size: 32rpx;
+  color: #111827;
+  border-bottom: 2rpx solid #E5E7EB;
+  transition: all 0.3s;
+}
+
+.picker-field {
+  width: 100%;
+  height: 80rpx;
+  font-size: 32rpx;
+  color: #111827;
+  border-bottom: 2rpx solid #E5E7EB;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.3s;
+}
+
+.arrow {
+  width: 16rpx;
+  height: 16rpx;
+  border-top: 4rpx solid #9CA3AF;
+  border-right: 4rpx solid #9CA3AF;
+  transform: rotate(45deg);
+}
+
+.text-black {
+  color: #111827;
+}
+
+.textarea-field {
+  width: 100%;
+  height: 160rpx;
+  font-size: 32rpx;
+  color: #111827;
+  border-bottom: 2rpx solid #E5E7EB;
+  transition: all 0.3s;
+  padding: 20rpx 0;
   box-sizing: border-box;
 }
 
-.form-textarea {
-  width: 100%;
-  height: 160rpx;
-  background-color: #f8f9fa;
-  border-radius: 12rpx;
-  padding: 24rpx;
-  font-size: 28rpx;
-  box-sizing: border-box;
+.input-field:focus, .textarea-field:focus {
+  border-bottom-color: #111827;
+}
+
+.ph-color {
+  color: #9CA3AF;
+  font-size: 30rpx;
 }
 
 .submit-btn {
-  margin-top: 60rpx;
-  background-color: #0ba360;
-  color: #fff;
-  border-radius: 40rpx;
+  margin-top: 80rpx;
+  background-color: #2563EB;
+  color: #FFFFFF;
   font-size: 32rpx;
-  height: 88rpx;
-  line-height: 88rpx;
+  font-weight: 500;
+  height: 96rpx;
+  line-height: 96rpx;
+  border-radius: 8rpx;
+  letter-spacing: 2rpx;
 }
 
 .submit-btn::after {
   border: none;
+}
+
+.submit-btn:active {
+  background-color: #1D4ED8;
 }
 </style>

@@ -102,4 +102,3 @@ export const reworkCaseRecord = (id: string, params: { remark: string }) => {
 export const getCaseStats = () => {
   return http.get(PORT1 + `/biz/case/stats`);
 };
-

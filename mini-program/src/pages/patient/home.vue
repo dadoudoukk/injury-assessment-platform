@@ -1,26 +1,27 @@
 <template>
   <view class="container">
-    <view class="header-banner">
-      <view class="title">人伤鉴定共享中心</view>
-      <view class="subtitle">让鉴定更透明 · 让理赔更高效</view>
+    <view class="header-section">
+      <view class="brand-line"></view>
+      <text class="title">人伤鉴定共享中心</text>
+      <text class="subtitle">让鉴定更透明 · 让理赔更高效</text>
     </view>
 
     <view class="action-grid">
       <!-- 已登录用户显示快捷入口 -->
       <view class="action-card patient-card" v-if="userStore.token" @click="goToMyCases">
-        <view class="icon-box">
-          <text class="iconfont">📋</text>
+        <view class="card-content">
+          <text class="card-title">我的案件</text>
+          <text class="card-desc">查进度 / 补充资料</text>
         </view>
-        <text class="card-title">我的案件</text>
-        <text class="card-desc">查进度 / 补充资料</text>
+        <view class="arrow"></view>
       </view>
 
       <view class="action-card agency-card" v-if="userStore.token" @click="goToMine">
-        <view class="icon-box">
-          <text class="iconfont">👤</text>
+        <view class="card-content">
+          <text class="card-title">个人中心</text>
+          <text class="card-desc">账号信息 / 退出登录</text>
         </view>
-        <text class="card-title">个人中心</text>
-        <text class="card-desc">账号信息 / 退出登录</text>
+        <view class="arrow"></view>
       </view>
 
       <!-- 未登录状态显示原来的入口 -->
@@ -30,23 +31,24 @@
         open-type="getPhoneNumber" 
         @getphonenumber="onGetPhoneNumber"
       >
-        <view class="icon-box">
-          <text class="iconfont">🏥</text>
+        <view class="card-content">
+          <text class="card-title">我是伤者</text>
+          <text class="card-desc">我要报案鉴定 / 查进度</text>
         </view>
-        <text class="card-title">我是伤者</text>
-        <text class="card-desc">我要报案鉴定 / 查进度</text>
+        <view class="arrow"></view>
       </button>
 
       <view v-if="!userStore.token" class="action-card agency-card" @click="goToAgencyLogin">
-        <view class="icon-box">
-          <text class="iconfont">🏢</text>
+        <view class="card-content">
+          <text class="card-title">我是鉴定机构</text>
+          <text class="card-desc">登录工作台接单处理</text>
         </view>
-        <text class="card-title">我是鉴定机构</text>
-        <text class="card-desc">登录工作台接单处理</text>
+        <view class="arrow"></view>
       </view>
       
       <view v-if="!userStore.token" class="register-link" @click="goToRegister">
-        还没有账号？<text class="link-text">点击申请入驻</text>
+        <text class="text-gray">还没有机构账号？</text>
+        <text class="link-text">点击申请入驻</text>
       </view>
     </view>
   </view>
@@ -118,113 +120,118 @@ const onGetPhoneNumber = async (e: any) => {
 <style scoped>
 .container {
   min-height: 100vh;
-  background-color: #f5f7fa;
-}
-
-.header-banner {
-  height: 400rpx;
-  background: linear-gradient(135deg, #0ba360 0%, #3cba92 100%);
+  background-color: #FFFFFF;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  color: #fff;
-  border-bottom-left-radius: 40rpx;
-  border-bottom-right-radius: 40rpx;
-  box-shadow: 0 10rpx 20rpx rgba(11, 163, 96, 0.15);
+}
+
+.header-section {
+  padding: 120rpx 60rpx 80rpx;
+  background-color: #FFFFFF;
+  position: relative;
+}
+
+.brand-line {
+  width: 60rpx;
+  height: 8rpx;
+  background-color: #2563EB;
+  margin-bottom: 30rpx;
 }
 
 .title {
-  font-size: 48rpx;
-  font-weight: bold;
-  letter-spacing: 4rpx;
+  display: block;
+  font-size: 56rpx;
+  font-weight: 600;
+  color: #111827;
+  letter-spacing: 2rpx;
+  margin-bottom: 20rpx;
 }
 
 .subtitle {
+  display: block;
   font-size: 28rpx;
-  margin-top: 20rpx;
-  opacity: 0.9;
+  color: #6B7280;
+  letter-spacing: 2rpx;
 }
 
 .action-grid {
-  padding: 40rpx;
-  margin-top: -60rpx;
-  position: relative;
-  z-index: 10;
+  padding: 0 60rpx;
+  flex: 1;
 }
 
 .action-card {
-  background-color: #fff;
-  border-radius: 24rpx;
-  padding: 40rpx;
+  background-color: #FFFFFF;
+  border: 2rpx solid #E5E7EB;
+  border-radius: 8rpx;
+  padding: 40rpx 40rpx;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   margin-bottom: 40rpx;
-  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.06);
-  border: none;
+  box-shadow: none;
   line-height: normal;
+  text-align: left;
+  transition: all 0.3s;
 }
+
 .action-card::after {
   border: none;
 }
+
 .action-card:active {
-  transform: scale(0.98);
+  background-color: #F9FAFB;
+  border-color: #D1D5DB;
 }
 
-.icon-box {
-  width: 120rpx;
-  height: 120rpx;
-  border-radius: 50%;
+.patient-card {
+  border-left: 8rpx solid #2563EB;
+}
+
+.agency-card {
+  border-left: 8rpx solid #4B5563;
+}
+
+.card-content {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 24rpx;
-}
-
-.patient-card .icon-box {
-  background-color: #e6f6f0;
-}
-.patient-card .icon-box .iconfont {
-  font-size: 60rpx;
-}
-.patient-card .card-title {
-  color: #0ba360;
-}
-
-.agency-card .icon-box {
-  background-color: #f0f7ff;
-}
-.agency-card .icon-box .iconfont {
-  font-size: 60rpx;
-}
-.agency-card .card-title {
-  color: #1890ff;
+  flex-direction: column;
 }
 
 .card-title {
   font-size: 36rpx;
-  font-weight: bold;
+  font-weight: 600;
+  color: #111827;
   margin-bottom: 12rpx;
 }
 
 .card-desc {
   font-size: 26rpx;
-  color: #999;
+  color: #6B7280;
+}
+
+.arrow {
+  width: 16rpx;
+  height: 16rpx;
+  border-top: 4rpx solid #9CA3AF;
+  border-right: 4rpx solid #9CA3AF;
+  transform: rotate(45deg);
 }
 
 .register-link {
   text-align: center;
-  font-size: 28rpx;
-  color: #666;
-  margin-top: 20rpx;
-  padding: 30rpx;
-  width: 100%;
+  margin-top: 60rpx;
+  padding: 30rpx 0;
 }
-.register-link .link-text {
-  color: #0ba360;
+
+.text-gray {
+  font-size: 28rpx;
+  color: #6B7280;
+}
+
+.link-text {
+  font-size: 28rpx;
+  color: #2563EB;
   font-weight: 500;
-  text-decoration: underline;
+  margin-left: 10rpx;
 }
 </style>

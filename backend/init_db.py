@@ -746,6 +746,9 @@ def ensure_case_appraisal_button_menu(session: Session) -> None:
         session,
         "caseManage",
         [
+            ("case:add", "新增", 1),
+            ("case:edit", "编辑", 2),
+            ("case:delete", "删除", 3),
             ("case:appraisal", "出具/修改报告", 4),
         ],
     )

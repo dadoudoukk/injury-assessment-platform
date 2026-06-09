@@ -1,263 +1,388 @@
 <template>
   <view class="container">
+    <view class="header-section">
+      <view class="brand-line"></view>
+      <text class="page-title">案件列表</text>
+    </view>
+
     <view class="list-container">
       <view v-if="caseList.length === 0 && !loading" class="empty-state">
-        <text class="empty-icon">📭</text>
-        <text class="empty-text">您暂未提交过案件信息</text>
+        <text class="empty-text">暂无理赔案件</text>
+        <button class="empty-btn" @click="goToCreate">快速报案</button>
       </view>
 
-      <view 
-        class="case-card" 
-        v-for="item in caseList" 
-        :key="item.id"
-      >
+      <view class="case-card" hover-class="card-hover" v-for="item in caseList" :key="item.id" @click="goToDetail(item.id)">
         <view class="card-header">
           <text class="report-no">报案号：{{ item.reportNumber }}</text>
-          <view :class="['status-tag', 'status-' + item.status]">
+          <text :class="['status-text', 'status-' + item.status]">
             {{ getStatusText(item.status) }}
-          </view>
+          </text>
         </view>
-        
+
         <view class="card-body">
           <view class="progress-bar">
-            <!-- 简单模拟进度条 -->
             <view class="step" :class="{ active: true }">
-              <text class="step-dot"></text>
-              <text class="step-text">已报案</text>
+              <view class="step-dot"></view>
+              <text class="step-label">已报案</text>
             </view>
             <view class="step-line" :class="{ active: item.status >= 2 }"></view>
             <view class="step" :class="{ active: item.status >= 2 }">
-              <text class="step-dot"></text>
-              <text class="step-text">{{ item.status === 1 ? '匹配机构中' : '鉴定中' }}</text>
+              <view class="step-dot" :class="{ current: item.status === 1 || item.status === 2 }"></view>
+              <text class="step-label">{{ item.status === 1 ? "匹配中" : "鉴定中" }}</text>
             </view>
             <view class="step-line" :class="{ active: item.status === 3 }"></view>
             <view class="step" :class="{ active: item.status === 3 }">
-              <text class="step-dot"></text>
-              <text class="step-text">已出报告</text>
+              <view class="step-dot" :class="{ current: item.status === 3 }"></view>
+              <text class="step-label">已出报告</text>
             </view>
           </view>
 
           <!-- 如果已分配机构，显示机构信息 -->
           <view class="agency-info" v-if="item.status >= 2 && item.agencyName">
-            <view class="info-title">为您服务的鉴定机构：</view>
+            <view class="info-title">服务机构</view>
             <view class="info-content">{{ item.agencyName }}</view>
-            <view class="info-tip">法医人员将与您取得联系，请保持电话畅通。</view>
           </view>
-          
-          <view class="agency-info warning" v-else-if="item.status === 1">
-            <view class="info-title">进度提示：</view>
-            <view class="info-tip">系统正在为您就近匹配鉴定机构，请耐心等待。</view>
+
+          <view class="agency-info" v-else-if="item.status === 1">
+            <view class="info-title">进度提示</view>
+            <view class="info-content text-gray">系统正在匹配机构，请耐心等待。</view>
           </view>
         </view>
       </view>
 
       <view class="loading-more" v-if="caseList.length > 0">
-        <text>{{ loading ? '加载中...' : (hasMore ? '上拉加载更多' : '没有更多记录了') }}</text>
+        <text>{{ loading ? "加载中..." : hasMore ? "上拉加载更多" : "没有更多记录了" }}</text>
       </view>
     </view>
-    
-    <!-- 悬浮个人中心按钮 -->
-    <view class="float-mine-btn" @click="goToMine">
-      <text class="iconfont">👤</text>
+
+    <!-- 底部固定栏用于跳转个人中心和报案 -->
+    <view class="bottom-action-bar">
+      <view class="nav-item" @click="goToMine">
+        <text class="nav-text">个人中心</text>
+      </view>
+      <view class="nav-item primary" @click="goToCreate">
+        <text class="nav-text">我要报案</text>
+      </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { onLoad, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
-import { request } from '@/utils/request'
+import { ref } from "vue";
+import { onLoad, onPullDownRefresh, onReachBottom } from "@dcloudio/uni-app";
+import { request } from "@/utils/request";
 
 const goToMine = () => {
-  uni.navigateTo({ url: '/pages/mine/index' })
-}
+  uni.navigateTo({ url: "/pages/mine/index" });
+};
 
-const caseList = ref<any[]>([])
-const pageNum = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
-const loading = ref(false)
-const hasMore = ref(true)
+const goToCreate = () => {
+  uni.navigateTo({ url: "/pages/patient/create" });
+};
+
+const goToDetail = (id: string | number) => {
+  uni.navigateTo({ url: `/pages/detail/index?id=${id}` });
+};
+
+const caseList = ref<any[]>([]);
+const pageNum = ref(1);
+const pageSize = ref(10);
+const total = ref(0);
+const loading = ref(false);
+const hasMore = ref(true);
 
 const getStatusText = (status: number) => {
-  const map: Record<number, string> = { 1: '待接单', 2: '鉴定中', 3: '已完成', 4: '复议中' }
-  return map[status] || '未知'
-}
+  const map: Record<number, string> = {
+    1: "待接单",
+    2: "鉴定中",
+    3: "已完成",
+    4: "复议中",
+  };
+  return map[status] || "未知";
+};
 
 const fetchList = async (isRefresh = false) => {
-  if (loading.value) return
-  loading.value = true
+  if (loading.value) return;
+  loading.value = true;
 
   if (isRefresh) {
-    pageNum.value = 1
-    hasMore.value = true
+    pageNum.value = 1;
+    hasMore.value = true;
   }
 
   try {
     const params: any = {
       pageNum: pageNum.value,
-      pageSize: pageSize.value
-    }
+      pageSize: pageSize.value,
+    };
 
-    const res = await request('/biz/case', 'GET', params)
-    
+    const res = await request("/biz/case", "GET", params);
+
     if (res && res.list) {
       if (isRefresh) {
-        caseList.value = res.list
+        caseList.value = res.list;
       } else {
-        caseList.value = [...caseList.value, ...res.list]
+        caseList.value = [...caseList.value, ...res.list];
       }
-      total.value = res.total || 0
-      
+      total.value = res.total || 0;
+
       if (caseList.value.length >= total.value) {
-        hasMore.value = false
+        hasMore.value = false;
       } else {
-        hasMore.value = true
+        hasMore.value = true;
       }
     }
   } catch (error) {
-    console.error('Fetch case list error:', error)
+    console.error("Fetch case list error:", error);
   } finally {
-    loading.value = false
-    uni.stopPullDownRefresh()
+    loading.value = false;
+    uni.stopPullDownRefresh();
   }
-}
+};
 
 onLoad(() => {
-  fetchList(true)
-  uni.$on('refreshList', () => {
-    fetchList(true)
-  })
-})
+  fetchList(true);
+  uni.$on("refreshList", () => {
+    fetchList(true);
+  });
+});
 
 onPullDownRefresh(() => {
-  fetchList(true)
-})
+  fetchList(true);
+});
 
 onReachBottom(() => {
   if (hasMore.value && !loading.value) {
-    pageNum.value += 1
-    fetchList()
+    pageNum.value += 1;
+    fetchList();
   }
-})
+});
 </script>
 
 <style scoped>
 .container {
   min-height: 100vh;
-  background-color: #f4f7f6;
-  padding: 24rpx;
+  background-color: #FFFFFF;
+  padding-bottom: 120rpx; /* 留出底部导航栏空间 */
 }
+
+.header-section {
+  padding: 40rpx 40rpx;
+  background-color: #FFFFFF;
+}
+
+.brand-line {
+  width: 40rpx;
+  height: 6rpx;
+  background-color: #2563EB;
+  margin-bottom: 20rpx;
+}
+
+.page-title {
+  font-size: 44rpx;
+  font-weight: 600;
+  color: #111827;
+}
+
+.list-container {
+  padding: 0 40rpx;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 200rpx;
+  padding-top: 160rpx;
 }
-.empty-icon { font-size: 100rpx; margin-bottom: 20rpx; }
-.empty-text { color: #999; font-size: 28rpx; }
+
+.empty-text {
+  color: #6B7280;
+  font-size: 32rpx;
+  margin-bottom: 60rpx;
+}
+
+.empty-btn {
+  background-color: #2563EB;
+  color: #FFFFFF;
+  font-size: 32rpx;
+  padding: 0 80rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 8rpx;
+  font-weight: 500;
+}
+.empty-btn::after {
+  border: none;
+}
 
 .case-card {
-  background-color: #fff;
-  border-radius: 20rpx;
-  padding: 30rpx;
-  margin-bottom: 24rpx;
-  box-shadow: 0 6rpx 20rpx rgba(0,0,0,0.03);
+  background-color: #FFFFFF;
+  border: 2rpx solid #E5E7EB;
+  border-radius: 8rpx;
+  padding: 40rpx;
+  margin-bottom: 40rpx;
+  transition: all 0.3s;
 }
+
+.card-hover {
+  background-color: #F9FAFB;
+  border-color: #D1D5DB;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 24rpx;
-  border-bottom: 1rpx solid #f0f0f0;
+  padding-bottom: 30rpx;
+  border-bottom: 2rpx solid #E5E7EB;
 }
-.report-no { font-size: 28rpx; font-weight: bold; color: #333; }
-.status-tag { font-size: 24rpx; padding: 4rpx 16rpx; border-radius: 10rpx; }
-.status-1 { background-color: #fff8e6; color: #f59a23; }
-.status-2 { background-color: #e6f6f0; color: #0ba360; }
-.status-3 { background-color: #f2f3f5; color: #666; }
 
-.card-body { padding-top: 30rpx; }
+.report-no {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #111827;
+}
 
-/* 进度条 */
+.status-text {
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.status-1 { color: #2563EB; }
+.status-2 { color: #059669; }
+.status-3 { color: #4B5563; }
+.status-4 { color: #DC2626; }
+
+.card-body {
+  padding-top: 40rpx;
+}
+
+/* 极简进度条 */
 .progress-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 40rpx;
-  padding: 0 20rpx;
 }
+
 .step {
   display: flex;
   flex-direction: column;
   align-items: center;
   z-index: 2;
+  background: #FFF;
 }
+
 .step-dot {
-  width: 20rpx;
-  height: 20rpx;
+  width: 16rpx;
+  height: 16rpx;
   border-radius: 50%;
-  background-color: #ddd;
-  margin-bottom: 10rpx;
+  background-color: #E5E7EB;
+  margin-bottom: 16rpx;
 }
+
 .step.active .step-dot {
-  background-color: #0ba360;
-  box-shadow: 0 0 0 6rpx rgba(11, 163, 96, 0.2);
+  background-color: #111827;
 }
-.step-text {
+
+.step-dot.current {
+  background-color: #2563EB;
+  box-shadow: 0 0 0 4rpx rgba(37, 99, 235, 0.2);
+}
+
+.step-label {
   font-size: 24rpx;
-  color: #999;
+  color: #9CA3AF;
 }
-.step.active .step-text {
-  color: #333;
-  font-weight: bold;
+
+.step.active .step-label {
+  color: #111827;
+  font-weight: 500;
 }
+
 .step-line {
   flex: 1;
-  height: 4rpx;
-  background-color: #ddd;
+  height: 2rpx;
+  background-color: #E5E7EB;
   margin: 0 10rpx;
-  margin-top: -30rpx;
+  margin-top: -36rpx; /* 对齐点 */
 }
+
 .step-line.active {
-  background-color: #0ba360;
+  background-color: #111827;
 }
 
 /* 机构提示信息 */
 .agency-info {
-  background-color: #f8f9fa;
-  border-radius: 12rpx;
-  padding: 24rpx;
-  border-left: 6rpx solid #0ba360;
+  background-color: #F9FAFB;
+  border: 2rpx solid #E5E7EB;
+  border-radius: 4rpx;
+  padding: 30rpx;
 }
-.agency-info.warning {
-  border-left-color: #f59a23;
-  background-color: #fff8e6;
+
+.info-title {
+  font-size: 24rpx;
+  color: #6B7280;
+  margin-bottom: 12rpx;
 }
-.info-title { font-size: 26rpx; color: #666; margin-bottom: 10rpx; }
-.info-content { font-size: 30rpx; font-weight: bold; color: #333; margin-bottom: 10rpx; }
-.info-tip { font-size: 24rpx; color: #999; }
 
-.loading-more { text-align: center; font-size: 24rpx; color: #999; padding: 20rpx 0; }
+.info-content {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #111827;
+}
 
-/* 悬浮按钮 */
-.float-mine-btn {
+.text-gray {
+  color: #6B7280;
+  font-weight: 400;
+}
+
+.loading-more {
+  text-align: center;
+  font-size: 26rpx;
+  color: #9CA3AF;
+  padding: 40rpx 0;
+}
+
+/* 底部固定动作栏 */
+.bottom-action-bar {
   position: fixed;
-  right: 40rpx;
-  bottom: 100rpx;
-  width: 100rpx;
-  height: 100rpx;
-  background: linear-gradient(135deg, #0ba360 0%, #3cba92 100%);
-  border-radius: 50%;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 110rpx;
+  background-color: #FFFFFF;
+  border-top: 2rpx solid #E5E7EB;
   display: flex;
-  justify-content: center;
-  align-items: center;
-  box-shadow: 0 8rpx 20rpx rgba(11, 163, 96, 0.4);
-  z-index: 99;
+  z-index: 100;
 }
 
-.float-mine-btn .iconfont {
-  color: #ffffff;
-  font-size: 48rpx;
+.nav-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-item:active {
+  background-color: #F9FAFB;
+}
+
+.nav-item.primary {
+  background-color: #2563EB;
+}
+
+.nav-item.primary:active {
+  background-color: #1D4ED8;
+}
+
+.nav-text {
+  font-size: 30rpx;
+  color: #4B5563;
+  font-weight: 500;
+}
+
+.nav-item.primary .nav-text {
+  color: #FFFFFF;
 }
 </style>

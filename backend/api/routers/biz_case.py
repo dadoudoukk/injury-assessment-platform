@@ -240,7 +240,13 @@ async def case_list(
         user_phone = (await db.scalars(user_stmt)).first()
         # 假设伤者用户的标志是既没有部门也没有机构
         if ctx_dept_id.get() is None and forced_agency_id is None and user_phone:
-            stmt = stmt.where(CaseRecord.victim_phone == user_phone)
+            from sqlalchemy import or_
+            stmt = stmt.where(
+                or_(
+                    CaseRecord.victim_phone == user_phone,
+                    CaseRecord.created_by == current_user_id
+                )
+            )
 
     count_stmt = select(func.count()).select_from(CaseRecord).where(*stmt._where_criteria)
     total = int((await db.scalar(count_stmt)) or 0)
@@ -298,7 +304,13 @@ async def case_export(
         user_stmt = select(SysUser.phone).where(SysUser.id == current_user_id)
         user_phone = (await db.scalars(user_stmt)).first()
         if ctx_dept_id.get() is None and forced_agency_id is None and user_phone:
-            stmt = stmt.where(CaseRecord.victim_phone == user_phone)
+            from sqlalchemy import or_
+            stmt = stmt.where(
+                or_(
+                    CaseRecord.victim_phone == user_phone,
+                    CaseRecord.created_by == current_user_id
+                )
+            )
 
     # 限制导出最大数量，防止 OOM
     stmt = stmt.order_by(CaseRecord.id.desc()).limit(10000)
