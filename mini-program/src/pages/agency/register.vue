@@ -85,6 +85,23 @@ const chooseLocation = () => {
     },
     fail: (err) => {
       console.log('chooseLocation err:', err)
+      const errMsg = err?.errMsg || ''
+      if (errMsg.includes('auth deny') || errMsg.includes('authorize')) {
+        uni.showModal({
+          title: '需要位置权限',
+          content: '请在设置中允许小程序使用位置信息，以便选择机构地址',
+          confirmText: '去设置',
+          success: (res) => {
+            if (res.confirm) uni.openSetting({})
+          }
+        })
+      } else if (errMsg.includes('requiredPrivateInfos')) {
+        uni.showToast({ title: '地图功能未配置，请联系管理员', icon: 'none' })
+      } else if (errMsg.includes('cancel')) {
+        // 用户取消选择，无需提示
+      } else {
+        uni.showToast({ title: '无法打开地图，请手动输入地址', icon: 'none' })
+      }
     }
   })
 }

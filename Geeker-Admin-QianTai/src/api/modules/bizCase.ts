@@ -99,6 +99,38 @@ export const reworkCaseRecord = (id: string, params: { remark: string }) => {
   return http.post(PORT1 + `/biz/case/${id}/rework`, params);
 };
 
+export interface CaseTrendStat {
+  date: string;
+  fullDate: string;
+  count: number;
+}
+
+export interface CaseStatusStat {
+  name: string;
+  value: number;
+}
+
+export interface CaseRecentActivity {
+  content: string;
+  timestamp: string;
+  type?: "primary" | "success" | "warning" | "danger" | "info";
+}
+
+export interface CaseStatsData {
+  total?: number;
+  pending?: number;
+  inProgress?: number;
+  completed?: number;
+  rework?: number;
+  agencyCount?: number;
+  insuranceCount?: number;
+  weekGrowth?: number;
+  statusStats?: CaseStatusStat[];
+  insuranceStats?: CaseStatusStat[];
+  trendStats?: CaseTrendStat[];
+  recentActivities?: CaseRecentActivity[];
+}
+
 export const getCaseStats = () => {
-  return http.get(PORT1 + `/biz/case/stats`);
+  return http.get<CaseStatsData>(PORT1 + `/biz/case/stats`, {}, { loading: false });
 };

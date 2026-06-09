@@ -137,7 +137,7 @@ class CaseRecord(SoftDeleteMixin, Base):
         comment="创建人（数据权限-仅本人）",
     )
     report_number: Mapped[str] = mapped_column(
-        String(50), nullable=False, unique=True, index=True, comment="出险报案号"
+        String(50), nullable=False, index=True, comment="出险报案号"
     )
     victim_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="伤者姓名")
     victim_phone: Mapped[str] = mapped_column(String(20), nullable=False, comment="联系电话")

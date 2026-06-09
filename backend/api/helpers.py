@@ -81,10 +81,14 @@ def menu_row_to_node(m: SysMenu) -> Dict[str, Any]:
         "isAffix": m.is_affix,
         "isKeepAlive": m.is_keep_alive,
     }
+    component = (m.component or "").strip()
+    if not component and m.menu_type == "MENU" and (m.path or "").strip() == "/home/index":
+        component = "/home/index"
+
     node: Dict[str, Any] = {
         "path": m.path or "",
         "name": m.name,
-        "component": (m.component or "").strip(),
+        "component": component,
         "meta": meta,
     }
     return node

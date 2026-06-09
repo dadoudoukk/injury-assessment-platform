@@ -218,8 +218,8 @@ onMounted(async () => {
   accidentTypeOptions.value = accidentRes.data;
   injuryTypeOptions.value = injuryRes.data;
   insuranceCompanyOptions.value = (insuranceRes.data || []).map(item => ({
-    dictLabel: item.companyName,
-    dictValue: item.companyName
+    label: item.companyName,
+    value: item.companyName
   }));
   agencyOptions.value = agencyRes.data.list || [];
 });
@@ -539,8 +539,8 @@ const baseColumns: ColumnProps<CaseRecordRow>[] = [
       const res = await getInsuranceAll();
       return {
         data: (res.data || []).map(item => ({
-          dictLabel: item.companyName,
-          dictValue: item.companyName
+          label: item.companyName,
+          value: item.companyName
         }))
       };
     },

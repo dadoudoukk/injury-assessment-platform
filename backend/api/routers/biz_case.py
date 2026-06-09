@@ -1,16 +1,18 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_async_db, make_response, require_permission, require_user_with_data_perm, require_user
 from api.helpers import case_record_row
 from core.context import ctx_agency_id, ctx_dept_id, ctx_user_id
 from core.data_perm import apply_data_scope
-from models import AppraisalAgency, CaseRecord
+from core.region import city_equivalent_values, normalize_region
+from models import AppraisalAgency, BizInsuranceCompany, CaseRecord
 from schemas.business import CaseAppraisalSubmit, CaseRecordCreate, CaseRecordUpdate, CaseRecordExportQuery, CaseRejectBody, CaseReworkBody
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import func, select, extract
@@ -24,6 +26,13 @@ VALID_CASE_STATUS = (1, 2, 3)
 STATUS_PENDING = 1
 STATUS_IN_PROGRESS = 2
 STATUS_COMPLETED = 3
+STATUS_REWORK = 4
+CASE_STATUS_LABELS = {
+    STATUS_PENDING: "待接单",
+    STATUS_IN_PROGRESS: "鉴定中",
+    STATUS_COMPLETED: "已完成",
+    STATUS_REWORK: "已打回",
+}
 
 
 def _parse_case_id(case_id: Union[str, int]) -> Optional[int]:
@@ -36,6 +45,30 @@ def _parse_case_id(case_id: Union[str, int]) -> Optional[int]:
 def _resolve_create_status(agency_id: Optional[int]) -> int:
     """新建案件：有机构则鉴定中，否则待接单。"""
     return STATUS_IN_PROGRESS if agency_id is not None else STATUS_PENDING
+
+
+async def _ensure_report_number_available(
+    db: AsyncSession,
+    report_number: str,
+    exclude_id: Optional[int] = None,
+) -> Optional[str]:
+    """校验未删除案件中报案号是否重复，返回错误信息或 None。"""
+    stmt = select(CaseRecord.id).where(
+        CaseRecord.report_number == report_number,
+        CaseRecord.is_delete == 0,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(CaseRecord.id != exclude_id)
+    if (await db.scalars(stmt.limit(1))).first() is not None:
+        return "出险报案号已存在"
+    return None
+
+
+def _release_report_number(report_number: str, case_id: int, deleted_at: datetime) -> str:
+    """软删除时释放报案号，避免历史唯一索引占用。"""
+    suffix = f"__del{case_id}_{int(deleted_at.timestamp())}"
+    max_base = max(50 - len(suffix), 1)
+    return f"{report_number[:max_base]}{suffix}"
 
 
 def _report_files_to_db(items: List[Any]) -> List[Dict[str, Any]]:
@@ -147,6 +180,34 @@ async def _apply_agency_change(
     return None
 
 
+def _build_case_activity(row: CaseRecord, agency_name: Optional[str]) -> Dict[str, Any]:
+    """根据案件当前状态生成首页时间轴文案。"""
+    agency_label = agency_name or "鉴定机构"
+    report_no = row.report_number
+    if int(row.status) == STATUS_COMPLETED:
+        content = f"案件 {report_no} 由 [{agency_label}] 完成鉴定，出具报告"
+        activity_type = "success"
+    elif int(row.status) == STATUS_PENDING:
+        content = f"新增报案：{row.victim_name} 提交了{row.accident_type}人伤鉴定申请"
+        activity_type = "primary"
+    elif int(row.status) == STATUS_IN_PROGRESS:
+        content = f"案件 {report_no} 已派发至 [{agency_label}]，进入鉴定中"
+        activity_type = "warning"
+    elif int(row.status) == STATUS_REWORK:
+        remark = (row.rework_remark or "待补充材料").strip()
+        content = f"案件 {report_no} 被保险公司打回：{remark}"
+        activity_type = "danger"
+    else:
+        content = f"案件 {report_no} 状态更新为 {CASE_STATUS_LABELS.get(int(row.status), '未知')}"
+        activity_type = "info"
+
+    return {
+        "content": content,
+        "timestamp": row.updated_at.strftime("%Y-%m-%d %H:%M") if row.updated_at else "",
+        "type": activity_type,
+    }
+
+
 @router.get("/stats")
 async def case_stats(
     db: AsyncSession = Depends(get_async_db),
@@ -160,38 +221,140 @@ async def case_stats(
     base_stmt = select(CaseRecord).where(CaseRecord.is_delete == 0)
     base_stmt = apply_data_scope(base_stmt, CaseRecord)
     base_stmt = _apply_agency_case_status_scope(base_stmt)
+    where_criteria = list(base_stmt._where_criteria)
 
-    status_stmt = select(CaseRecord.status, func.count(CaseRecord.id)).where(*base_stmt._where_criteria).group_by(CaseRecord.status)
+    status_stmt = select(CaseRecord.status, func.count(CaseRecord.id)).where(*where_criteria).group_by(CaseRecord.status)
     status_rows = (await db.execute(status_stmt)).all()
-    
-    status_counts = {1: 0, 2: 0, 3: 0}
+
+    status_counts = {1: 0, 2: 0, 3: 0, 4: 0}
     total_count = 0
     for r in status_rows:
-        st = r[0]
-        cnt = r[1]
+        st = int(r[0])
+        cnt = int(r[1])
         status_counts[st] = cnt
         total_count += cnt
-        
-    # 2. 保险公司占比 (饼图)
-    ins_stmt = select(CaseRecord.insurance_company, func.count(CaseRecord.id)).where(*base_stmt._where_criteria).group_by(CaseRecord.insurance_company).order_by(func.count(CaseRecord.id).desc()).limit(10)
+
+    status_stats = [
+        {"name": CASE_STATUS_LABELS[STATUS_PENDING], "value": status_counts[STATUS_PENDING]},
+        {"name": CASE_STATUS_LABELS[STATUS_IN_PROGRESS], "value": status_counts[STATUS_IN_PROGRESS]},
+        {"name": CASE_STATUS_LABELS[STATUS_COMPLETED], "value": status_counts[STATUS_COMPLETED]},
+        {"name": CASE_STATUS_LABELS[STATUS_REWORK], "value": status_counts[STATUS_REWORK]},
+    ]
+
+    # 2. 保险公司占比 (饼图，保留给数据大屏复用)
+    ins_stmt = (
+        select(CaseRecord.insurance_company, func.count(CaseRecord.id))
+        .where(*where_criteria)
+        .group_by(CaseRecord.insurance_company)
+        .order_by(func.count(CaseRecord.id).desc())
+        .limit(10)
+    )
     ins_rows = (await db.execute(ins_stmt)).all()
-    insurance_stats = [{"name": r[0], "value": r[1]} for r in ins_rows]
+    insurance_stats = [{"name": r[0] or "未知", "value": r[1]} for r in ins_rows]
 
-    # 3. 近期报案趋势 (折线图)
-    # 取按日期的统计
-    date_stmt = select(CaseRecord.report_date, func.count(CaseRecord.id)).where(*base_stmt._where_criteria).group_by(CaseRecord.report_date).order_by(CaseRecord.report_date.desc()).limit(14)
-    date_rows = (await db.execute(date_stmt)).all()
-    trend_stats = [{"date": r[0].strftime("%Y-%m-%d") if r[0] else "未知", "count": r[1]} for r in date_rows]
-    trend_stats.reverse()  # 时间正序
+    # 3. 近 30 天新增趋势（按创建时间）
+    today = date.today()
+    trend_start = today - timedelta(days=29)
+    trend_stmt = (
+        select(func.date(CaseRecord.created_at), func.count(CaseRecord.id))
+        .where(*where_criteria, func.date(CaseRecord.created_at) >= trend_start)
+        .group_by(func.date(CaseRecord.created_at))
+    )
+    trend_rows = (await db.execute(trend_stmt)).all()
+    trend_map = {r[0]: int(r[1]) for r in trend_rows if r[0]}
+    trend_stats = []
+    for offset in range(30):
+        day = trend_start + timedelta(days=offset)
+        trend_stats.append(
+            {
+                "date": day.strftime("%m-%d"),
+                "fullDate": day.strftime("%Y-%m-%d"),
+                "count": trend_map.get(day, 0),
+            }
+        )
 
-    return make_response(200, data={
-        "total": total_count,
-        "pending": status_counts[1],
-        "inProgress": status_counts[2],
-        "completed": status_counts[3],
-        "insuranceStats": insurance_stats,
-        "trendStats": trend_stats
-    }, msg="success")
+    # 4. 周环比（近 7 天 vs 前 7 天新增案件）
+    week_start = today - timedelta(days=6)
+    prev_week_start = today - timedelta(days=13)
+    prev_week_end = today - timedelta(days=7)
+    current_week_count = int(
+        (
+            await db.scalar(
+                select(func.count(CaseRecord.id)).where(
+                    *where_criteria,
+                    func.date(CaseRecord.created_at) >= week_start,
+                    func.date(CaseRecord.created_at) <= today,
+                )
+            )
+        )
+        or 0
+    )
+    previous_week_count = int(
+        (
+            await db.scalar(
+                select(func.count(CaseRecord.id)).where(
+                    *where_criteria,
+                    func.date(CaseRecord.created_at) >= prev_week_start,
+                    func.date(CaseRecord.created_at) <= prev_week_end,
+                )
+            )
+        )
+        or 0
+    )
+    if previous_week_count > 0:
+        week_growth = round((current_week_count - previous_week_count) / previous_week_count * 100, 1)
+    elif current_week_count > 0:
+        week_growth = 100.0
+    else:
+        week_growth = 0.0
+
+    # 5. 平台规模（全平台统计，不受案件数据权限影响）
+    agency_count = int(
+        (
+            await db.scalar(
+                select(func.count(AppraisalAgency.id)).where(
+                    AppraisalAgency.is_delete == 0,
+                    AppraisalAgency.status == 1,
+                )
+            )
+        )
+        or 0
+    )
+    insurance_count = int(
+        (
+            await db.scalar(
+                select(func.count(BizInsuranceCompany.id)).where(
+                    BizInsuranceCompany.is_delete == 0,
+                    BizInsuranceCompany.status == 1,
+                )
+            )
+        )
+        or 0
+    )
+
+    # 6. 最新案件流转动态
+    recent_stmt = _case_select_with_agency().where(*where_criteria).order_by(CaseRecord.updated_at.desc()).limit(8)
+    recent_rows = (await db.execute(recent_stmt)).all()
+    recent_activities = [_build_case_activity(row, agency_name) for row, agency_name in recent_rows]
+
+    return make_response(
+        200,
+        data={
+            "total": total_count,
+            "pending": status_counts[STATUS_PENDING],
+            "inProgress": status_counts[STATUS_IN_PROGRESS],
+            "completed": status_counts[STATUS_COMPLETED],
+            "rework": status_counts[STATUS_REWORK],
+            "agencyCount": agency_count,
+            "insuranceCount": insurance_count,
+            "weekGrowth": week_growth,
+            "statusStats": status_stats,
+            "insuranceStats": insurance_stats,
+            "trendStats": trend_stats,
+            "recentActivities": recent_activities,
+        },
+        msg="success",
+    )
 
 @router.get("")
 async def case_list(
@@ -443,9 +606,15 @@ async def case_create_patient(
         return make_response(500, data={}, msg="报案城市不能为空")
     if not district:
         return make_response(500, data={}, msg="报案区县不能为空")
-    
+
+    province, city, district = normalize_region(province, city, district)
+
     # 自动派单逻辑
     agency_id = await _auto_dispatch_agency(db, province, city, district)
+
+    dup_msg = await _ensure_report_number_available(db, report_number)
+    if dup_msg:
+        return make_response(500, data={}, msg=dup_msg)
 
     resolved_status = _resolve_create_status(agency_id)
     now = datetime.utcnow()
@@ -470,7 +639,11 @@ async def case_create_patient(
             updated_at=now,
         )
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return make_response(500, data={}, msg="出险报案号已存在")
     return make_response(200, data={}, msg="报案成功")
 
 async def _auto_dispatch_agency(
@@ -481,11 +654,13 @@ async def _auto_dispatch_agency(
     exclude_agency_ids: Optional[List[int]] = None
 ) -> Optional[int]:
     """自动派单逻辑：先同区县，找不到再同市。可排除指定的机构 ID。"""
-    
+    province, city, district = normalize_region(province, city, district)
+    city_variants = city_equivalent_values(province, city)
+
     def _build_stmt(is_district: bool):
         stmt = select(AppraisalAgency.id).where(
             AppraisalAgency.province == province,
-            AppraisalAgency.city == city,
+            AppraisalAgency.city.in_(city_variants),
             AppraisalAgency.status == 1,
             AppraisalAgency.is_delete == 0,
         )
@@ -501,7 +676,7 @@ async def _auto_dispatch_agency(
     # 2. 若区县无匹配机构，兜底扩大到同市级别
     if agency_id is None:
         agency_id = (await db.scalars(_build_stmt(False))).first()
-        
+
     return agency_id
 
 @router.post("", dependencies=[Depends(require_permission("case:add"))])
@@ -545,6 +720,8 @@ async def case_create(
     if not insurance_company:
         return make_response(500, data={}, msg="所属保险公司不能为空")
 
+    province, city, district = normalize_region(province, city, district)
+
     agency_id = body.agencyId
     if agency_id is not None:
         agency_err = await _validate_active_agency(db, agency_id)
@@ -554,13 +731,9 @@ async def case_create(
         # 自动派单逻辑
         agency_id = await _auto_dispatch_agency(db, province, city, district)
 
-    dup_stmt = (
-        select(CaseRecord.id)
-        .where(CaseRecord.report_number == report_number, CaseRecord.is_delete == 0)
-        .limit(1)
-    )
-    if (await db.scalars(dup_stmt)).first() is not None:
-        return make_response(500, data={}, msg="出险报案号已存在")
+    dup_msg = await _ensure_report_number_available(db, report_number)
+    if dup_msg:
+        return make_response(500, data={}, msg=dup_msg)
 
     resolved_status = _resolve_create_status(agency_id)
     now = datetime.utcnow()
@@ -584,7 +757,11 @@ async def case_create(
             updated_at=now,
         )
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return make_response(500, data={}, msg="出险报案号已存在")
     return make_response(200, data={}, msg="新增成功")
 
 
@@ -625,17 +802,9 @@ async def case_update(
         report_number = body.reportNumber.strip()
         if not report_number:
             return make_response(500, data={}, msg="出险报案号不能为空")
-        dup_stmt = (
-            select(CaseRecord.id)
-            .where(
-                CaseRecord.report_number == report_number,
-                CaseRecord.is_delete == 0,
-                CaseRecord.id != parsed_id,
-            )
-            .limit(1)
-        )
-        if (await db.scalars(dup_stmt)).first() is not None:
-            return make_response(500, data={}, msg="出险报案号已存在")
+        dup_msg = await _ensure_report_number_available(db, report_number, exclude_id=parsed_id)
+        if dup_msg:
+            return make_response(500, data={}, msg=dup_msg)
         row.report_number = report_number
 
     if body.victimName is not None:
@@ -670,6 +839,9 @@ async def case_update(
         if not district:
             return make_response(500, data={}, msg="报案区县不能为空")
         row.district = district
+
+    if any(x is not None for x in (body.province, body.city, body.district)):
+        row.province, row.city, row.district = normalize_region(row.province, row.city, row.district)
 
     if body.accidentType is not None:
         accident_type = body.accidentType.strip()
@@ -893,8 +1065,10 @@ async def case_delete(
     if int(row.status) == STATUS_COMPLETED:
         return make_response(500, data={}, msg="案件已完成，不允许删除")
 
+    now = datetime.utcnow()
     row.is_delete = 1
-    row.delete_time = datetime.utcnow()
-    row.updated_at = datetime.utcnow()
+    row.delete_time = now
+    row.report_number = _release_report_number(row.report_number, parsed_id, now)
+    row.updated_at = now
     await db.commit()
     return make_response(200, data={}, msg="删除成功")

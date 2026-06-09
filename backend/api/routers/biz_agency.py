@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_async_db, make_response, pwd_context, require_permission, require_user
 from api.helpers import appraisal_agency_row
+from core.region import normalize_region
 from models import AppraisalAgency, CaseRecord, SysRole, SysUser
 from schemas.business import AppraisalAgencyAudit, AppraisalAgencyCreate, AppraisalAgencyUpdate
 
@@ -196,6 +197,8 @@ async def agency_register(
     if await _agency_name_exists(db, agency_name):
         return make_response(500, data={}, msg="机构名称已存在，请确认是否已被注册")
 
+    province, city, district = normalize_region(province, city, district)
+
     # The agency is created with status=0 (待审核)
     new_agency = AppraisalAgency(
         agency_name=agency_name,
@@ -246,6 +249,8 @@ async def agency_create(
 
     if await _agency_name_exists(db, agency_name):
         return make_response(500, data={}, msg="机构名称已存在")
+
+    province, city, district = normalize_region(province, city, district)
 
     now = datetime.utcnow()
     db.add(
@@ -420,6 +425,8 @@ async def agency_update(
     if should_resubmit:
         row.status = 0
         row.audit_remark = None
+
+    row.province, row.city, row.district = normalize_region(row.province, row.city, row.district)
 
     row.updated_at = datetime.utcnow()
     await db.commit()

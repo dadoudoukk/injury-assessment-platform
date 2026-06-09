@@ -10,6 +10,20 @@ import { getUserInfoApi } from "@/api/modules/login";
 // 引入 views 文件夹下所有 vue 文件
 const modules = import.meta.glob("@/views/**/*.vue");
 
+/** 将菜单 component 路径解析为懒加载组件 */
+const resolveViewComponent = (componentPath: string) => {
+  const normalized = componentPath.startsWith("/") ? componentPath : `/${componentPath}`;
+  const candidates = [`/src/views${normalized}.vue`, `@/views${normalized}.vue`];
+
+  for (const key of candidates) {
+    if (modules[key]) return modules[key];
+  }
+
+  const suffix = `${normalized}.vue`.replace(/\\/g, "/");
+  const matchedKey = Object.keys(modules).find(key => key.replace(/\\/g, "/").endsWith(suffix));
+  return matchedKey ? modules[matchedKey] : undefined;
+};
+
 /**
  * @description 初始化动态路由
  */
@@ -48,9 +62,19 @@ export const initDynamicRouter = async () => {
 
     // 4.添加动态路由
     authStore.flatMenuListGet.forEach(item => {
+      if (item.path && router.getRoutes().some(route => route.path === item.path)) return;
+
       item.children && delete item.children;
       if (item.component && typeof item.component == "string") {
-        item.component = modules["/src/views" + item.component + ".vue"];
+        const viewComponent = resolveViewComponent(item.component);
+        if (!viewComponent) {
+          console.warn(`[Vue Router] 未找到组件: ${item.component}，路由 ${item.path} 将跳过注册`);
+          return;
+        }
+        item.component = viewComponent;
+      } else if (!item.children?.length) {
+        console.warn(`[Vue Router] 路由 ${item.path} 缺少 component，已跳过注册`);
+        return;
       }
       if (item.meta.isFull) {
         router.addRoute(item as unknown as RouteRecordRaw);

@@ -291,9 +291,12 @@ def seed(session: Session) -> None:
     menu_home = SysMenu(
         parent_id=None,
         menu_type="MENU",
-        name="home_index",
+        name="home",
         title="首页",
         path="/home/index",
+        component="/home/index",
+        icon="HomeFilled",
+        is_affix=True,
         sort=1,
     )
     menu_system = SysMenu(
