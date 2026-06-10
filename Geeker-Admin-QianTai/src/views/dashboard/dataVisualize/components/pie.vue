@@ -15,7 +15,7 @@ const props = defineProps<{
 
 const option = computed<ECOption>(() => {
   const data = props.pieData && props.pieData.length ? props.pieData : [{ name: "暂无数据", value: 0 }];
-  
+
   return {
     title: {
       text: "保险公司",
@@ -85,16 +85,7 @@ const option = computed<ECOption>(() => {
           fontSize: 19,
           color: "#a1a1a1"
         },
-        color: [
-          "#feb791",
-          "#b898fd",
-          "#8347fd",
-          "#3cba92",
-          "#0ba360",
-          "#f59a23",
-          "#1890ff",
-          "#ff4d4f"
-        ]
+        color: ["#feb791", "#b898fd", "#8347fd", "#3cba92", "#0ba360", "#f59a23", "#1890ff", "#ff4d4f"]
       }
     ]
   };

@@ -130,7 +130,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { request } from '@/utils/request'
+import { request, BASE_URL } from '@/utils/request'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -215,7 +215,7 @@ const uploadFile = (filePath: string) => {
   uni.showLoading({ title: '上传中...' })
   const token = userStore.token || uni.getStorageSync('token')
   uni.uploadFile({
-    url: 'http://127.0.0.1:8000/api/file/upload', 
+    url: `${BASE_URL}/file/upload`, 
     filePath: filePath,
     name: 'file',
     header: {

@@ -1,4 +1,4 @@
-const BASE_URL = 'http://127.0.0.1:8000/api' // 后端 API 地址，可根据环境调整
+export const BASE_URL = 'http://101.43.141.29/api'
 
 export const request = <T = any>(
   url: string,

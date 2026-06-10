@@ -68,8 +68,9 @@ export type HeaderRenderScope<T> = {
   [key: string]: any;
 };
 
-export interface ColumnProps<T = any>
-  extends Partial<Omit<TableColumnCtx<T>, "type" | "children" | "renderCell" | "renderHeader">> {
+export interface ColumnProps<T = any> extends Partial<
+  Omit<TableColumnCtx<T>, "type" | "children" | "renderCell" | "renderHeader">
+> {
   type?: TypeProps; // 列类型
   tag?: boolean | Ref<boolean>; // 是否是标签展示
   isShow?: boolean | Ref<boolean>; // 是否显示在表格当中

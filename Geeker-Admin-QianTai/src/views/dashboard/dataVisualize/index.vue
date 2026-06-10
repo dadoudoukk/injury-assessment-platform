@@ -2,7 +2,7 @@
   <div class="dataVisualize-box">
     <div class="card top-box">
       <div class="top-title">案件统计大盘</div>
-      <el-tabs v-model="tabActive" class="demo-tabs" style="display: none;">
+      <el-tabs v-model="tabActive" class="demo-tabs" style="display: none">
         <el-tab-pane v-for="item in tab" :key="item.name" :label="item.label" :name="item.name"></el-tab-pane>
       </el-tabs>
       <div class="top-content">
@@ -62,7 +62,7 @@
     <div class="card bottom-box">
       <div class="bottom-title">近两周报案趋势</div>
       <div class="bottom-tabs">
-        <el-tabs v-model="tabActive" class="demo-tabs" style="display: none;">
+        <el-tabs v-model="tabActive" class="demo-tabs" style="display: none">
           <el-tab-pane v-for="item in tab" :key="item.name" :label="item.label" :name="item.name"></el-tab-pane>
         </el-tabs>
       </div>
@@ -89,9 +89,7 @@ const statsData = ref<any>({
   trendStats: []
 });
 
-const tab = [
-  { label: "未来7日", name: 1 },
-];
+const tab = [{ label: "未来7日", name: 1 }];
 
 onMounted(async () => {
   try {

@@ -15,7 +15,7 @@ const props = defineProps<{
 
 const option = computed<ECOption>(() => {
   const data = props.curveData && props.curveData.length ? props.curveData : [];
-  
+
   return {
     tooltip: {
       trigger: "axis",
