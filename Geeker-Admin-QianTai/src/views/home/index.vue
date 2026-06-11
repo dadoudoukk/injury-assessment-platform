@@ -150,7 +150,7 @@ const normalizeStats = (raw: CaseStatsData): Required<CaseStatsData> => {
     raw.statusStats?.length && raw.statusStats.some(item => item.value > 0)
       ? raw.statusStats
       : [
-          { name: "待接单", value: pending },
+          { name: "待确认", value: pending },
           { name: "鉴定中", value: inProgress },
           { name: "已完成", value: completed },
           { name: "已打回", value: rework }

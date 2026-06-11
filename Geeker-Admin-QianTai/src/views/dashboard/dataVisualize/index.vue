@@ -23,7 +23,7 @@
                   <img src="./images/add_person.png" alt="" />
                 </div>
                 <span class="item-value">{{ statsData.pending || 0 }}</span>
-                <span class="traffic-name sle">待接单案件</span>
+                <span class="traffic-name sle">待确认案件</span>
               </div>
               <div class="gitHub-traffic traffic-box">
                 <div class="traffic-img">

@@ -26,13 +26,13 @@
               <text class="step-label">已报案</text>
             </view>
             <view class="step-line" :class="{ active: item.status >= 2 }"></view>
-            <view class="step" :class="{ active: item.status >= 2 }">
-              <view class="step-dot" :class="{ current: item.status === 1 || item.status === 2 }"></view>
-              <text class="step-label">{{ item.status === 1 ? "匹配中" : "鉴定中" }}</text>
+            <view class="step" :class="{ active: item.status >= 2 && item.status !== 5 }">
+              <view class="step-dot" :class="{ current: item.status >= 2 && item.status < 4 }"></view>
+              <text class="step-label">{{ item.status === 1 ? '匹配中' : '鉴定中' }}</text>
             </view>
-            <view class="step-line" :class="{ active: item.status === 3 }"></view>
-            <view class="step" :class="{ active: item.status === 3 }">
-              <view class="step-dot" :class="{ current: item.status === 3 }"></view>
+            <view class="step-line" :class="{ active: item.status === 4 }"></view>
+            <view class="step" :class="{ active: item.status === 4 }">
+              <view class="step-dot" :class="{ current: item.status === 4 }"></view>
               <text class="step-label">已出报告</text>
             </view>
           </view>
@@ -93,10 +93,11 @@ const hasMore = ref(true);
 
 const getStatusText = (status: number) => {
   const map: Record<number, string> = {
-    1: "待接单",
-    2: "鉴定中",
-    3: "已完成",
-    4: "复议中",
+    1: "待确认",
+    2: "已受理",
+    3: "鉴定中",
+    4: "已完成",
+    5: "已打回"
   };
   return map[status] || "未知";
 };

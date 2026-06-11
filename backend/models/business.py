@@ -151,7 +151,11 @@ class CaseRecord(SoftDeleteMixin, Base):
         String(100), nullable=False, index=True, comment="所属保险公司（字典 dict_value，中文名称）"
     )
     status: Mapped[int] = mapped_column(
-        Integer, default=1, nullable=False, index=True, comment="案件状态：1待接单 2鉴定中 3已完成 4已打回"
+        Integer,
+        default=1,
+        nullable=False,
+        index=True,
+        comment="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回",
     )
     agency_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="鉴定机构ID")
     rejected_agency_ids: Mapped[Optional[List[Any]]] = mapped_column(JSON, nullable=True, comment="拒单机构 ID 列表 JSON 数组")
@@ -160,7 +164,13 @@ class CaseRecord(SoftDeleteMixin, Base):
         Numeric(12, 2), nullable=True, comment="鉴定金额/预估理赔款"
     )
     appraisal_conclusion: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="鉴定结论")
-    report_files: Mapped[Optional[List[Any]]] = mapped_column(JSON, nullable=True, comment="报告附件 JSON 数组")
+    report_files: Mapped[Optional[List[Any]]] = mapped_column(JSON, nullable=True, comment="报告附件 JSON 数组（历史只读）")
+    appraisal_videos: Mapped[Optional[List[Any]]] = mapped_column(
+        JSON, nullable=True, comment="鉴定取证视频 JSON 数组"
+    )
+    document_number: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, comment="鉴定文书编号"
+    )
     appraisal_submitted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True, comment="报告提交时间"
     )

@@ -1,61 +1,62 @@
 <template>
-  <el-drawer v-model="visible" :title="drawerTitle" size="min(720px, 96vw)" destroy-on-close @closed="onClosed">
+  <el-drawer v-model="visible" title="查看鉴定结果" size="min(720px, 96vw)" destroy-on-close @closed="onClosed">
     <div v-loading="loading" class="appraisal-drawer-body">
-      <el-descriptions v-if="summary.reportNumber" :column="2" border class="case-summary">
-        <el-descriptions-item label="出险报案号">{{ summary.reportNumber }}</el-descriptions-item>
-        <el-descriptions-item label="伤者姓名">{{ summary.victimName }}</el-descriptions-item>
-        <el-descriptions-item v-if="!isAgencyMode" label="鉴定机构" :span="2">{{ summary.agencyName }}</el-descriptions-item>
+      <el-descriptions v-if="detail.reportNumber" :column="2" border class="case-summary">
+        <el-descriptions-item label="出险报案号">{{ detail.reportNumber }}</el-descriptions-item>
+        <el-descriptions-item label="伤者姓名">{{ detail.victimName }}</el-descriptions-item>
+        <el-descriptions-item v-if="!isAgencyMode" label="鉴定机构" :span="2">
+          {{ detail.agencyName || "暂未指派" }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="detail.documentNumber" label="鉴定文书编号" :span="2">
+          {{ detail.documentNumber }}
+        </el-descriptions-item>
       </el-descriptions>
 
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="isReadonly ? undefined : rules"
-        :disabled="isReadonly"
-        :hide-required-asterisk="isReadonly"
-        label-width="110px"
-        class="appraisal-form"
-      >
-        <el-form-item label="鉴定金额" prop="appraisalAmount">
-          <el-input v-model="form.appraisalAmount" placeholder="请输入鉴定金额（元）" clearable maxlength="20">
-            <template #append>元</template>
-          </el-input>
-        </el-form-item>
-        <el-form-item label="鉴定结论" prop="appraisalConclusion">
-          <el-input
-            v-model="form.appraisalConclusion"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入鉴定结论"
-            maxlength="2000"
-            show-word-limit
-          />
-        </el-form-item>
-        <el-form-item label="报告附件" prop="reportFiles">
-          <UploadFiles v-model:files="form.reportFiles" :disabled="isReadonly" />
-        </el-form-item>
-      </el-form>
-    </div>
+      <template v-if="detail.appraisalVideos?.length">
+        <div class="section-title">鉴定取证视频</div>
+        <ul class="video-list">
+          <li v-for="(video, index) in detail.appraisalVideos" :key="index">
+            <el-link :href="video.url" target="_blank" type="primary">
+              {{ video.name || `视频 ${index + 1}` }}
+            </el-link>
+          </li>
+        </ul>
+      </template>
 
-    <template v-if="!isReadonly" #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="submitLoading" @click="handleSubmit">确定</el-button>
-    </template>
+      <template v-if="detail.appraisalAmount || detail.appraisalConclusion">
+        <div class="section-title">历史鉴定报告（只读）</div>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item v-if="detail.appraisalAmount" label="理赔金额">
+            ¥{{ detail.appraisalAmount }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="detail.appraisalConclusion" label="鉴定结论">
+            {{ detail.appraisalConclusion }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </template>
+
+      <template v-if="detail.reportFiles?.length">
+        <div class="section-title">历史报告附件（只读）</div>
+        <ul class="video-list">
+          <li v-for="(file, index) in detail.reportFiles" :key="index">
+            <el-link :href="file.url" target="_blank" type="primary">
+              {{ file.name || `附件 ${index + 1}` }}
+            </el-link>
+          </li>
+        </ul>
+      </template>
+
+      <el-empty
+        v-if="!hasAnyContent"
+        description="暂无鉴定结果数据"
+      />
+    </div>
   </el-drawer>
 </template>
 
 <script setup lang="ts" name="CaseAppraisalDrawer">
 import { computed, reactive, ref } from "vue";
-import { ElMessage, FormInstance } from "element-plus";
-import type { FormRules } from "element-plus";
-import UploadFiles from "@/components/Upload/Files.vue";
-import {
-  getCaseRecordDetail,
-  submitCaseAppraisal,
-  type CaseAppraisalSubmit,
-  type CaseRecordRow,
-  type ReportFileItem
-} from "@/api/modules/bizCase";
+import { getCaseRecordDetail, type CaseRecordRow } from "@/api/modules/bizCase";
 import { useTenantMode } from "@/hooks/useTenantMode";
 import type { AppraisalDrawerMode } from "./useCaseActions";
 
@@ -67,107 +68,32 @@ interface AppraisalDrawerParams {
   refresh?: () => void;
 }
 
-interface AppraisalFormState {
-  appraisalAmount: string;
-  appraisalConclusion: string;
-  reportFiles: ReportFileItem[];
-}
-
-const AMOUNT_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
-
 const visible = ref(false);
 const loading = ref(false);
-const submitLoading = ref(false);
-const formRef = ref<FormInstance>();
 const drawerParams = ref<AppraisalDrawerParams | null>(null);
 
-const summary = reactive({
-  reportNumber: "",
-  victimName: "",
-  agencyName: ""
-});
+const detail = reactive<Partial<CaseRecordRow>>({});
 
-const form = reactive<AppraisalFormState>({
-  appraisalAmount: "",
-  appraisalConclusion: "",
-  reportFiles: []
-});
+const hasAnyContent = computed(
+  () =>
+    !!detail.documentNumber ||
+    (detail.appraisalVideos?.length ?? 0) > 0 ||
+    !!detail.appraisalAmount ||
+    !!detail.appraisalConclusion ||
+    (detail.reportFiles?.length ?? 0) > 0
+);
 
-const isReadonly = computed(() => drawerParams.value?.mode === "view");
-
-const drawerTitle = computed(() => {
-  const map: Record<AppraisalDrawerMode, string> = {
-    submit: "出具鉴定报告",
-    edit: "修改鉴定报告",
-    view: "查看鉴定报告"
-  };
-  return map[drawerParams.value?.mode ?? "submit"];
-});
-
-const validateAmount = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
-  const text = (value || "").trim();
-  if (!text) {
-    callback(new Error("请输入鉴定金额"));
-    return;
-  }
-  if (!AMOUNT_RE.test(text) || Number(text) <= 0) {
-    callback(new Error("请输入大于 0 的金额，最多两位小数"));
-    return;
-  }
-  callback();
+const resetDetail = () => {
+  Object.keys(detail).forEach(key => {
+    delete (detail as Record<string, unknown>)[key];
+  });
 };
-
-const validateReportFiles = (_rule: unknown, value: ReportFileItem[], callback: (error?: Error) => void) => {
-  if (!value?.length) {
-    callback(new Error("请至少上传一份报告附件"));
-    return;
-  }
-  callback();
-};
-
-const rules: FormRules = {
-  appraisalAmount: [{ required: true, validator: validateAmount, trigger: "blur" }],
-  appraisalConclusion: [{ required: true, message: "请输入鉴定结论", trigger: "blur" }],
-  reportFiles: [{ required: true, validator: validateReportFiles, trigger: "change" }]
-};
-
-const resetSummary = () => {
-  summary.reportNumber = "";
-  summary.victimName = "";
-  summary.agencyName = "";
-};
-
-const resetForm = () => {
-  form.appraisalAmount = "";
-  form.appraisalConclusion = "";
-  form.reportFiles = [];
-  formRef.value?.clearValidate();
-};
-
-const mapDetailToAppraisalForm = (detail: CaseRecordRow): AppraisalFormState => ({
-  appraisalAmount: detail.appraisalAmount ?? "",
-  appraisalConclusion: detail.appraisalConclusion ?? "",
-  reportFiles: Array.isArray(detail.reportFiles) ? [...detail.reportFiles] : []
-});
-
-const fillSummaryFromDetail = (detail: CaseRecordRow) => {
-  summary.reportNumber = detail.reportNumber || "--";
-  summary.victimName = detail.victimName || "--";
-  summary.agencyName = detail.agencyName || "暂未指派";
-};
-
-const buildAppraisalPayload = (): CaseAppraisalSubmit => ({
-  appraisalAmount: form.appraisalAmount.trim(),
-  appraisalConclusion: form.appraisalConclusion.trim(),
-  reportFiles: form.reportFiles
-});
 
 const loadDetail = async (caseId: string) => {
   loading.value = true;
   try {
     const res = await getCaseRecordDetail(caseId);
-    fillSummaryFromDetail(res.data);
-    Object.assign(form, mapDetailToAppraisalForm(res.data));
+    Object.assign(detail, res.data);
   } catch {
     visible.value = false;
   } finally {
@@ -177,34 +103,14 @@ const loadDetail = async (caseId: string) => {
 
 const acceptParams = async (params: AppraisalDrawerParams) => {
   drawerParams.value = params;
-  resetSummary();
-  resetForm();
+  resetDetail();
   visible.value = true;
   await loadDetail(params.caseId);
 };
 
-const handleSubmit = () => {
-  if (drawerParams.value?.mode === "view") return;
-  formRef.value?.validate(async valid => {
-    if (!valid || !drawerParams.value) return;
-    submitLoading.value = true;
-    try {
-      const res = await submitCaseAppraisal(drawerParams.value.caseId, buildAppraisalPayload());
-      ElMessage.success({ message: res.msg || "提交成功" });
-      visible.value = false;
-      drawerParams.value.refresh?.();
-    } catch {
-      /* 全局拦截器已提示错误 */
-    } finally {
-      submitLoading.value = false;
-    }
-  });
-};
-
 const onClosed = () => {
   drawerParams.value = null;
-  resetSummary();
-  resetForm();
+  resetDetail();
 };
 
 defineExpose({ acceptParams });
@@ -217,7 +123,16 @@ defineExpose({ acceptParams });
 .case-summary {
   margin-bottom: 20px;
 }
-.appraisal-form {
-  margin-top: 4px;
+.section-title {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.video-list {
+  margin: 0;
+  padding-left: 20px;
+  li {
+    margin-bottom: 8px;
+  }
 }
 </style>

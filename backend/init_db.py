@@ -1167,6 +1167,32 @@ def ensure_case_record_rework_remark_column() -> None:
             )
         print("已为 biz_case_record 表补充 rework_remark 字段。")
 
+
+def ensure_case_record_appraisal_flow_columns() -> None:
+    from sqlalchemy import inspect, text
+
+    try:
+        insp = inspect(engine)
+        cols = [c["name"] for c in insp.get_columns("biz_case_record")]
+    except Exception:
+        return
+    alters: list[str] = []
+    if "appraisal_videos" not in cols:
+        alters.append(
+            "ALTER TABLE biz_case_record ADD COLUMN appraisal_videos JSON NULL COMMENT '鉴定取证视频 JSON 数组'"
+        )
+    if "document_number" not in cols:
+        alters.append(
+            "ALTER TABLE biz_case_record ADD COLUMN document_number VARCHAR(50) NULL COMMENT '鉴定文书编号'"
+        )
+    if not alters:
+        return
+    with engine.begin() as conn:
+        for sql in alters:
+            conn.execute(text(sql))
+    print("已为 biz_case_record 表补充 appraisal_videos / document_number 字段。")
+
+
 async def main() -> None:
     try:
         ensure_tables()
@@ -1184,6 +1210,7 @@ async def main() -> None:
         ensure_sys_menu_api_path_prefix_column()
         ensure_case_record_rejected_agencies_column()
         ensure_case_record_rework_remark_column()
+        ensure_case_record_appraisal_flow_columns()
         async with AsyncSessionLocal() as session:
             try:
                 await session.run_sync(seed)

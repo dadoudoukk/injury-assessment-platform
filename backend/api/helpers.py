@@ -271,7 +271,7 @@ def fragment_content_row(r: BizFragmentContent) -> Dict[str, Any]:
     }
 
 
-def _serialize_report_files(raw: Any) -> Optional[List[Any]]:
+def _serialize_json_list(raw: Any) -> Optional[List[Any]]:
     if raw is None:
         return None
     if isinstance(raw, str):
@@ -288,24 +288,73 @@ def _serialize_report_files(raw: Any) -> Optional[List[Any]]:
     return None
 
 
+def _serialize_report_files(raw: Any) -> Optional[List[Any]]:
+    return _serialize_json_list(raw)
+
+
 def _format_appraisal_amount(amount: Any) -> Optional[str]:
     if amount is None:
         return None
     return f"{Decimal(str(amount)):.2f}"
 
 
-def case_record_row(r: CaseRecord, agency_name: Optional[str] = None) -> Dict[str, Any]:
+STATUS_PENDING_CONFIRM = 1
+PRIVACY_WHITELIST_ROLES = frozenset({"admin", "insurance"})
+
+
+def mask_victim_name(name: str) -> str:
+    text = (name or "").strip()
+    if not text:
+        return ""
+    return text[0]
+
+
+def mask_victim_phone(phone: str) -> str:
+    text = (phone or "").strip()
+    if len(text) >= 7:
+        return f"{text[:3]}****{text[-4:]}"
+    if len(text) >= 1:
+        return "****"
+    return ""
+
+
+def should_mask_victim_privacy(viewer_ctx: Optional[Dict[str, Any]], case_status: int) -> bool:
+    """仅鉴定机构在待确认阶段脱敏；admin/insurance/超管不脱敏。"""
+    if int(case_status) != STATUS_PENDING_CONFIRM:
+        return False
+    if not viewer_ctx:
+        return False
+    if viewer_ctx.get("is_superuser"):
+        return False
+    role_codes = viewer_ctx.get("roles") or []
+    if PRIVACY_WHITELIST_ROLES.intersection(role_codes):
+        return False
+    if viewer_ctx.get("agency_id") is not None:
+        return True
+    return False
+
+
+def case_record_row(
+    r: CaseRecord,
+    agency_name: Optional[str] = None,
+    viewer_ctx: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     created = r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else ""
     updated = r.updated_at.strftime("%Y-%m-%d %H:%M:%S") if r.updated_at else ""
     report_date = r.report_date.strftime("%Y-%m-%d") if r.report_date else ""
     submitted_at = (
         r.appraisal_submitted_at.strftime("%Y-%m-%d %H:%M:%S") if r.appraisal_submitted_at else ""
     )
+    victim_name = r.victim_name
+    victim_phone = r.victim_phone
+    if should_mask_victim_privacy(viewer_ctx, int(r.status)):
+        victim_name = mask_victim_name(victim_name)
+        victim_phone = mask_victim_phone(victim_phone)
     return {
         "id": str(r.id),
         "reportNumber": r.report_number,
-        "victimName": r.victim_name,
-        "victimPhone": r.victim_phone,
+        "victimName": victim_name,
+        "victimPhone": victim_phone,
         "reportDate": report_date,
         "province": r.province,
         "city": r.city,
@@ -319,6 +368,8 @@ def case_record_row(r: CaseRecord, agency_name: Optional[str] = None) -> Dict[st
         "appraisalAmount": _format_appraisal_amount(r.appraisal_amount),
         "appraisalConclusion": r.appraisal_conclusion or None,
         "reportFiles": _serialize_report_files(r.report_files),
+        "appraisalVideos": _serialize_json_list(r.appraisal_videos),
+        "documentNumber": r.document_number or None,
         "reworkRemark": r.rework_remark or None,
         "appraisalSubmittedAt": submitted_at or None,
         "appraisalSubmittedBy": r.appraisal_submitted_by,

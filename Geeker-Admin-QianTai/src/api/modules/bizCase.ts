@@ -2,11 +2,17 @@ import { PORT1 } from "@/api/config/servicePort";
 import http from "@/api";
 import { ResPage } from "@/api/interface";
 
-/** 报告附件项（与后端 ReportFileItem 一致） */
+/** 报告附件项（历史只读） */
 export interface ReportFileItem {
   url: string;
   name?: string;
   mime?: string;
+}
+
+/** 鉴定视频项 */
+export interface AppraisalVideoItem {
+  url: string;
+  name?: string;
 }
 
 export interface CaseRecordRow {
@@ -24,9 +30,12 @@ export interface CaseRecordRow {
   status: number;
   agencyId?: number | null;
   agencyName?: string | null;
+  /** 历史字段，有值时只读展示 */
   appraisalAmount?: string | null;
   appraisalConclusion?: string | null;
   reportFiles?: ReportFileItem[] | null;
+  appraisalVideos?: AppraisalVideoItem[] | null;
+  documentNumber?: string | null;
   appraisalSubmittedAt?: string | null;
   appraisalSubmittedBy?: number | null;
   reworkRemark?: string | null;
@@ -61,12 +70,6 @@ export interface CaseRecordForm {
   agencyId?: number | null;
 }
 
-export interface CaseAppraisalSubmit {
-  appraisalAmount: string | number;
-  appraisalConclusion: string;
-  reportFiles: ReportFileItem[];
-}
-
 export const getCaseRecordList = (params: CaseRecordListParams) => {
   return http.get<ResPage<CaseRecordRow>>(PORT1 + `/biz/case`, params);
 };
@@ -85,10 +88,6 @@ export const editCaseRecord = (id: string, params: Partial<CaseRecordForm>) => {
 
 export const deleteCaseRecord = (id: string) => {
   return http.delete(PORT1 + `/biz/case/${id}`);
-};
-
-export const submitCaseAppraisal = (id: string, params: CaseAppraisalSubmit) => {
-  return http.post(PORT1 + `/biz/case/${id}/appraisal`, params);
 };
 
 export const exportCaseRecord = (params: CaseRecordListParams) => {
@@ -119,6 +118,7 @@ export interface CaseRecentActivity {
 export interface CaseStatsData {
   total?: number;
   pending?: number;
+  accepted?: number;
   inProgress?: number;
   completed?: number;
   rework?: number;
@@ -133,4 +133,29 @@ export interface CaseStatsData {
 
 export const getCaseStats = () => {
   return http.get<CaseStatsData>(PORT1 + `/biz/case/stats`, {}, { loading: false });
+};
+
+/** 案件状态常量 */
+export const CASE_STATUS = {
+  PENDING_CONFIRM: 1,
+  ACCEPTED: 2,
+  APPRAISING: 3,
+  COMPLETED: 4,
+  REWORK: 5
+} as const;
+
+export const CASE_STATUS_OPTIONS = [
+  { label: "待确认", value: CASE_STATUS.PENDING_CONFIRM },
+  { label: "已受理", value: CASE_STATUS.ACCEPTED },
+  { label: "鉴定中", value: CASE_STATUS.APPRAISING },
+  { label: "已完成", value: CASE_STATUS.COMPLETED },
+  { label: "已打回", value: CASE_STATUS.REWORK }
+];
+
+export const CASE_STATUS_MAP: Record<number, { label: string; tagType: string }> = {
+  [CASE_STATUS.PENDING_CONFIRM]: { label: "待确认", tagType: "warning" },
+  [CASE_STATUS.ACCEPTED]: { label: "已受理", tagType: "" },
+  [CASE_STATUS.APPRAISING]: { label: "鉴定中", tagType: "primary" },
+  [CASE_STATUS.COMPLETED]: { label: "已完成", tagType: "success" },
+  [CASE_STATUS.REWORK]: { label: "已打回", tagType: "danger" }
 };

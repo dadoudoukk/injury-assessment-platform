@@ -133,6 +133,8 @@ import {
   reworkCaseRecord,
   getCaseRecordDetail,
   getCaseRecordList,
+  CASE_STATUS_OPTIONS,
+  CASE_STATUS_MAP,
   type CaseRecordForm,
   type CaseRecordRow
 } from "@/api/modules/bizCase";
@@ -145,19 +147,11 @@ import { decodeRegion, encodeRegion, formatRegionText, validateRegion } from "@/
 import CaseAppraisalDrawer from "./CaseAppraisalDrawer.vue";
 import { useCaseActions, type AppraisalDrawerMode } from "./useCaseActions";
 
-const caseStatusOptions = [
-  { label: "待接单", value: 1, tagType: "warning" },
-  { label: "鉴定中", value: 2, tagType: "primary" },
-  { label: "已完成", value: 3, tagType: "success" },
-  { label: "已打回", value: 4, tagType: "danger" }
-];
-
-const caseStatusMap: Record<number, { label: string; tagType: string }> = {
-  1: { label: "待接单", tagType: "warning" },
-  2: { label: "鉴定中", tagType: "primary" },
-  3: { label: "已完成", tagType: "success" },
-  4: { label: "已打回", tagType: "danger" }
-};
+const caseStatusOptions = CASE_STATUS_OPTIONS.map(item => ({
+  ...item,
+  tagType: CASE_STATUS_MAP[item.value]?.tagType ?? ""
+}));
+const caseStatusMap = CASE_STATUS_MAP;
 
 const ORPHAN_AGENCY_SUFFIX = " (已不可用)";
 

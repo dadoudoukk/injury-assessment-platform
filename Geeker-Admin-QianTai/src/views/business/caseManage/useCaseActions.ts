@@ -1,11 +1,11 @@
 import type { Component } from "vue";
 import { computed } from "vue";
-import { Delete, Document, EditPen, View } from "@element-plus/icons-vue";
-import type { CaseRecordRow } from "@/api/modules/bizCase";
+import { Delete, EditPen, View } from "@element-plus/icons-vue";
+import { CASE_STATUS, type CaseRecordRow } from "@/api/modules/bizCase";
 import { useAuthButtons } from "@/hooks/useAuthButtons";
 import { useTenantMode } from "@/hooks/useTenantMode";
 
-export type AppraisalDrawerMode = "submit" | "edit" | "view";
+export type AppraisalDrawerMode = "view";
 
 export interface CaseActionContext {
   openEdit: (row: CaseRecordRow) => void;
@@ -29,15 +29,10 @@ interface ActionDef {
   icon?: Component;
   type?: CaseRowAction["type"];
   auth?: string;
-  /** 平台专属动作，机构模式下不可见 */
   platformOnly?: boolean;
   visible: (row: CaseRecordRow) => boolean;
   onClick: (ctx: CaseActionContext) => (row: CaseRecordRow) => void;
 }
-
-const STATUS_PENDING = 1;
-const STATUS_IN_PROGRESS = 2;
-const STATUS_COMPLETED = 3;
 
 const ACTION_DEFS: ActionDef[] = [
   {
@@ -47,43 +42,31 @@ const ACTION_DEFS: ActionDef[] = [
     type: "primary",
     auth: "case:edit",
     platformOnly: true,
-    visible: row => row.status === STATUS_PENDING || row.status === STATUS_IN_PROGRESS,
+    visible: row =>
+      row.status === CASE_STATUS.PENDING_CONFIRM ||
+      row.status === CASE_STATUS.ACCEPTED ||
+      row.status === CASE_STATUS.APPRAISING,
     onClick: ctx => ctx.openEdit
-  },
-  {
-    key: "submitAppraisal",
-    label: "出具报告",
-    icon: Document,
-    type: "primary",
-    auth: "case:appraisal",
-    visible: row => row.status === STATUS_IN_PROGRESS,
-    onClick: ctx => row => ctx.openAppraisalDrawer(row, "submit")
   },
   {
     key: "viewDetail",
     label: "查看详情",
     icon: View,
     type: "primary",
-    visible: row => row.status === STATUS_COMPLETED,
+    visible: row => row.status === CASE_STATUS.COMPLETED,
     onClick: ctx => ctx.openViewDetail
   },
   {
     key: "viewAppraisal",
-    label: "查看报告",
+    label: "查看鉴定结果",
     icon: View,
     type: "primary",
     auth: "case:appraisal",
-    visible: row => row.status === STATUS_COMPLETED,
+    visible: row =>
+      row.status === CASE_STATUS.APPRAISING ||
+      row.status === CASE_STATUS.COMPLETED ||
+      row.status === CASE_STATUS.REWORK,
     onClick: ctx => row => ctx.openAppraisalDrawer(row, "view")
-  },
-  {
-    key: "editAppraisal",
-    label: "修改报告",
-    icon: EditPen,
-    type: "primary",
-    auth: "case:appraisal",
-    visible: row => row.status === STATUS_COMPLETED,
-    onClick: ctx => row => ctx.openAppraisalDrawer(row, "edit")
   },
   {
     key: "rework",
@@ -92,7 +75,7 @@ const ACTION_DEFS: ActionDef[] = [
     type: "danger",
     auth: "case:edit",
     platformOnly: true,
-    visible: row => row.status === STATUS_COMPLETED,
+    visible: row => row.status === CASE_STATUS.COMPLETED,
     onClick: ctx => ctx.openRework
   },
   {
@@ -102,7 +85,11 @@ const ACTION_DEFS: ActionDef[] = [
     type: "danger",
     auth: "case:delete",
     platformOnly: true,
-    visible: row => row.status === STATUS_PENDING || row.status === STATUS_IN_PROGRESS || row.status === 4,
+    visible: row =>
+      row.status === CASE_STATUS.PENDING_CONFIRM ||
+      row.status === CASE_STATUS.ACCEPTED ||
+      row.status === CASE_STATUS.APPRAISING ||
+      row.status === CASE_STATUS.REWORK,
     onClick: ctx => ctx.deleteOne
   }
 ];

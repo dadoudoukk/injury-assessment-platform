@@ -12,9 +12,8 @@
     <!-- 基础信息区 -->
     <view class="section-block">
       <view class="section-title">案件基础信息</view>
-      
       <view class="info-list">
-        <view class="info-item" v-if="caseDetail.status === 4 && caseDetail.reworkRemark">
+        <view class="info-item" v-if="caseDetail.status === 5 && caseDetail.reworkRemark">
           <text class="info-label text-red">打回原因</text>
           <text class="info-value text-red font-bold">{{ caseDetail.reworkRemark }}</text>
         </view>
@@ -24,7 +23,10 @@
         </view>
         <view class="info-item">
           <text class="info-label">联系电话</text>
-          <text class="info-value text-blue" @click="callPhone(caseDetail.victimPhone)">
+          <text
+            :class="['info-value', canCallPhone ? 'text-blue' : '']"
+            @click="canCallPhone && callPhone(caseDetail.victimPhone)"
+          >
             {{ caseDetail.victimPhone }}
           </text>
         </view>
@@ -43,83 +45,80 @@
       </view>
     </view>
 
-    <!-- 鉴定工作区 -->
-    <view class="section-block" v-if="caseDetail.status === 2 || caseDetail.status === 3 || caseDetail.status === 4">
-      <view class="section-title">鉴定文书与结论</view>
-      
-      <!-- 待接单 -->
-      <template v-if="caseDetail.status === 1 && !isPatientMode">
-        <view class="action-buttons mt-40">
-          <button class="btn-outline-danger" :loading="submitLoading" @click="handleReject">拒绝接单，退回平台</button>
-        </view>
+    <!-- 机构鉴定工作区 -->
+    <view class="section-block" v-if="!isPatientMode">
+      <view class="section-title">鉴定流转</view>
+
+      <!-- 待确认：确认受理 -->
+      <template v-if="caseDetail.status === 1">
+        <view class="hint-text">请核实案件概况后确认受理，受理后可查看完整伤者信息并进行视频取证。</view>
+        <button class="btn-primary mt-40" :loading="submitLoading" @click="handleAccept">确认受理</button>
       </template>
 
-      <!-- 鉴定中/已打回 (可编辑) -->
-      <template v-if="caseDetail.status === 2 || caseDetail.status === 4">
+      <!-- 已受理 / 已打回：上传视频 -->
+      <template v-if="caseDetail.status === 2 || caseDetail.status === 5">
         <view class="form-group">
-          <text class="form-label required">预估理赔金额(元)</text>
-          <input 
-            class="form-input" 
-            type="digit" 
-            v-model="form.appraisalAmount" 
-            placeholder="请输入金额" 
+          <text class="form-label required">鉴定取证视频</text>
+          <view class="video-list">
+            <view class="video-item" v-for="(file, index) in form.appraisalVideos" :key="index">
+              <text class="video-name">{{ file.name || '视频' + (index + 1) }}</text>
+              <view class="delete-btn" @click="removeVideo(index)">✕</view>
+            </view>
+            <view class="upload-btn" @click="chooseVideo" v-if="form.appraisalVideos.length < 9">
+              <text class="add-icon">+</text>
+              <text class="add-text">上传视频</text>
+            </view>
+          </view>
+        </view>
+        <button class="btn-primary mt-60" :loading="submitLoading" @click="submitVideos">提交鉴定视频</button>
+      </template>
+
+      <!-- 鉴定中：只读视频 + 填文书编号 -->
+      <template v-if="caseDetail.status === 3">
+        <view class="form-group" v-if="caseDetail.appraisalVideos?.length">
+          <text class="form-label">已提交视频（只读）</text>
+          <view class="readonly-video-list">
+            <text class="readonly-video-item" v-for="(v, i) in caseDetail.appraisalVideos" :key="i">
+              {{ v.name || '视频' + (i + 1) }}
+            </text>
+          </view>
+        </view>
+        <view class="form-group">
+          <text class="form-label required">鉴定文书编号</text>
+          <input
+            class="form-input"
+            v-model="form.documentNumber"
+            placeholder="请输入鉴定文书编号"
+            maxlength="50"
             placeholder-class="ph-color"
           />
         </view>
-        
-        <view class="form-group">
-          <text class="form-label required">鉴定结论</text>
-          <textarea 
-            class="form-textarea" 
-            v-model="form.appraisalConclusion" 
-            placeholder="请详细描述伤情和鉴定结论..." 
-            maxlength="1000"
-            placeholder-class="ph-color"
-          ></textarea>
-        </view>
-
-        <view class="form-group">
-          <text class="form-label required">相关附件(图片/视频)</text>
-          <view class="upload-grid">
-            <view class="upload-item" v-for="(file, index) in form.reportFiles" :key="index">
-              <image class="upload-img" :src="file.url" mode="aspectFill"></image>
-              <view class="delete-btn" @click="removeFile(index)">✕</view>
-            </view>
-            <view class="upload-btn" @click="chooseMedia" v-if="form.reportFiles.length < 9">
-              <text class="add-icon">+</text>
-              <text class="add-text">上传附件</text>
-            </view>
-          </view>
-        </view>
-
-        <button class="btn-primary mt-60" :loading="submitLoading" @click="submitAppraisal">
-          提交鉴定结果
-        </button>
+        <button class="btn-primary mt-60" :loading="submitLoading" @click="submitDocumentNumber">提交文书编号</button>
       </template>
 
-      <!-- 已完成 (只读) -->
-      <template v-if="caseDetail.status === 3">
+      <!-- 已完成：全只读 -->
+      <template v-if="caseDetail.status === 4">
         <view class="info-list">
-          <view class="info-item">
-            <text class="info-label">理赔金额</text>
-            <text class="info-value highlight">¥{{ caseDetail.appraisalAmount }}</text>
+          <view class="info-item" v-if="caseDetail.documentNumber">
+            <text class="info-label">文书编号</text>
+            <text class="info-value highlight">{{ caseDetail.documentNumber }}</text>
           </view>
-          <view class="info-item col-item">
-            <text class="info-label mb-16">鉴定结论</text>
-            <view class="readonly-box">{{ caseDetail.appraisalConclusion }}</view>
-          </view>
-          <view class="info-item col-item" v-if="caseDetail.reportFiles && caseDetail.reportFiles.length > 0">
-            <text class="info-label mb-16">相关附件</text>
-            <view class="preview-grid">
-              <image 
-                class="preview-img" 
-                v-for="(file, index) in caseDetail.reportFiles" 
-                :key="index"
-                :src="file.url"
-                mode="aspectFill"
-                @click="previewImage(file.url, caseDetail.reportFiles)"
-              ></image>
+          <view class="info-item col-item" v-if="caseDetail.appraisalVideos?.length">
+            <text class="info-label mb-16">鉴定视频</text>
+            <view class="readonly-video-list">
+              <text class="readonly-video-item" v-for="(v, i) in caseDetail.appraisalVideos" :key="i">
+                {{ v.name || '视频' + (i + 1) }}
+              </text>
             </view>
+          </view>
+          <!-- 历史数据只读 -->
+          <view class="info-item" v-if="caseDetail.appraisalAmount">
+            <text class="info-label">理赔金额（历史）</text>
+            <text class="info-value">¥{{ caseDetail.appraisalAmount }}</text>
+          </view>
+          <view class="info-item col-item" v-if="caseDetail.appraisalConclusion">
+            <text class="info-label mb-16">鉴定结论（历史）</text>
+            <view class="readonly-box">{{ caseDetail.appraisalConclusion }}</view>
           </view>
         </view>
       </template>
@@ -143,10 +142,15 @@ const isPatientMode = computed(() => {
   return !roleName.includes('机构') && !roleName.includes('管理员')
 })
 
+const canCallPhone = computed(() => {
+  if (!caseDetail.value) return false
+  if (isPatientMode.value) return true
+  return caseDetail.value.status !== 1
+})
+
 const form = reactive({
-  appraisalAmount: '',
-  appraisalConclusion: '',
-  reportFiles: [] as { name: string, url: string }[]
+  appraisalVideos: [] as { name: string; url: string }[],
+  documentNumber: ''
 })
 
 onLoad((options) => {
@@ -162,6 +166,8 @@ const fetchDetail = async () => {
     const res = await request(`/biz/case/${caseId.value}`, 'GET')
     if (res) {
       caseDetail.value = res
+      form.appraisalVideos = []
+      form.documentNumber = res.documentNumber || ''
     }
   } catch (error) {
     console.error('Fetch detail error:', error)
@@ -171,111 +177,70 @@ const fetchDetail = async () => {
 }
 
 const getStatusText = (status: number) => {
-  if (status === 4) return '已打回'
-  return status === 3 ? '已完成' : (status === 2 ? '鉴定中' : '待接单')
+  const map: Record<number, string> = {
+    1: '待确认',
+    2: '已受理',
+    3: '鉴定中',
+    4: '已完成',
+    5: '已打回'
+  }
+  return map[status] || '未知'
 }
 
 const callPhone = (phone: string) => {
+  if (!phone || phone.includes('*')) return
   uni.makePhoneCall({ phoneNumber: phone })
 }
 
-const chooseMedia = () => {
+const chooseVideo = () => {
   uni.chooseMedia({
-    count: 9 - form.reportFiles.length,
-    mediaType: ['image', 'video'],
+    count: 9 - form.appraisalVideos.length,
+    mediaType: ['video'],
     sourceType: ['album', 'camera'],
-    sizeType: ['compressed'],
-    success: async (res) => {
-      const tempFiles = res.tempFiles
-      for (const file of tempFiles) {
-        if (file.fileType === 'image') {
-          try {
-            const compressRes = await new Promise<any>((resolve, reject) => {
-              uni.compressImage({
-                src: file.tempFilePath,
-                quality: 80,
-                success: resolve,
-                fail: reject
-              })
-            })
-            uploadFile(compressRes.tempFilePath)
-          } catch (error) {
-            console.error('图片压缩失败，使用原图上传', error)
-            uploadFile(file.tempFilePath)
-          }
-        } else {
-          uploadFile(file.tempFilePath)
-        }
+    maxDuration: 300,
+    success: (res) => {
+      for (const file of res.tempFiles) {
+        uploadVideo(file.tempFilePath)
       }
     }
   })
 }
 
-const uploadFile = (filePath: string) => {
+const uploadVideo = (filePath: string) => {
   uni.showLoading({ title: '上传中...' })
   const token = userStore.token || uni.getStorageSync('token')
   uni.uploadFile({
-    url: `${BASE_URL}/file/upload`, 
-    filePath: filePath,
+    url: `${BASE_URL}/file/upload/video`,
+    filePath,
     name: 'file',
-    header: {
-      'x-access-token': token
-    },
+    header: { 'x-access-token': token },
     success: (uploadRes) => {
       try {
         const resData = JSON.parse(uploadRes.data)
         if (resData.code === 200 && resData.data?.fileUrl) {
-          form.reportFiles.push({
-            name: '附件',
-            url: resData.data.fileUrl
-          })
+          form.appraisalVideos.push({ name: '鉴定视频', url: resData.data.fileUrl })
           uni.showToast({ title: '上传成功', icon: 'none' })
         } else {
           uni.showToast({ title: resData.msg || '上传失败', icon: 'none' })
         }
-      } catch (e) {
+      } catch {
         uni.showToast({ title: '解析失败', icon: 'none' })
       }
     },
-    fail: () => {
-      uni.showToast({ title: '上传异常', icon: 'none' })
-    },
-    complete: () => {
-      uni.hideLoading()
-    }
+    fail: () => uni.showToast({ title: '上传异常', icon: 'none' }),
+    complete: () => uni.hideLoading()
   })
 }
 
-const removeFile = (index: number) => {
-  form.reportFiles.splice(index, 1)
-}
-
-const submitAppraisal = async () => {
-  if (!form.appraisalAmount) return uni.showToast({ title: '请输入金额', icon: 'none' })
-  if (!form.appraisalConclusion.trim()) return uni.showToast({ title: '请输入鉴定结论', icon: 'none' })
-  if (form.reportFiles.length === 0) return uni.showToast({ title: '请上传至少一份附件', icon: 'none' })
-
-  submitLoading.value = true
-  try {
-    await request(`/biz/case/${caseId.value}/appraisal`, 'POST', {
-      appraisalAmount: Number(form.appraisalAmount),
-      appraisalConclusion: form.appraisalConclusion,
-      reportFiles: form.reportFiles
-    })
-    uni.showToast({ title: '提交成功', icon: 'success' })
-    fetchDetail()
-  } catch (error) {
-    console.error('Submit appraisal error:', error)
-  } finally {
-    submitLoading.value = false
-  }
+const removeVideo = (index: number) => {
+  form.appraisalVideos.splice(index, 1)
 }
 
 const handleAccept = async () => {
   submitLoading.value = true
   try {
     await request(`/biz/case/${caseId.value}/accept`, 'POST')
-    uni.showToast({ title: '已接单', icon: 'success' })
+    uni.showToast({ title: '已确认受理', icon: 'success' })
     fetchDetail()
   } catch (e) {
     console.error(e)
@@ -284,36 +249,40 @@ const handleAccept = async () => {
   }
 }
 
-const handleReject = () => {
-  uni.showModal({
-    title: '确认拒单',
-    content: '拒单后将把该案件退回平台重新派单，是否确认？',
-    confirmColor: '#DC2626',
-    success: async (res) => {
-      if (res.confirm) {
-        submitLoading.value = true
-        try {
-          await request(`/biz/case/${caseId.value}/reject`, 'POST', { reason: '机构主动拒单' })
-          uni.showToast({ title: '已退单并重新分配', icon: 'success' })
-          setTimeout(() => {
-            uni.navigateBack()
-          }, 1500)
-        } catch (e) {
-          console.error(e)
-        } finally {
-          submitLoading.value = false
-        }
-      }
-    }
-  })
+const submitVideos = async () => {
+  if (form.appraisalVideos.length === 0) {
+    return uni.showToast({ title: '请至少上传一个视频', icon: 'none' })
+  }
+  submitLoading.value = true
+  try {
+    await request(`/biz/case/${caseId.value}/appraisal-videos`, 'POST', {
+      appraisalVideos: form.appraisalVideos
+    })
+    uni.showToast({ title: '提交成功', icon: 'success' })
+    fetchDetail()
+  } catch (error) {
+    console.error(error)
+  } finally {
+    submitLoading.value = false
+  }
 }
 
-const previewImage = (currentUrl: string, files: any[]) => {
-  const urls = files.map(item => item.url)
-  uni.previewImage({
-    current: currentUrl,
-    urls: urls
-  })
+const submitDocumentNumber = async () => {
+  if (!form.documentNumber.trim()) {
+    return uni.showToast({ title: '请输入文书编号', icon: 'none' })
+  }
+  submitLoading.value = true
+  try {
+    await request(`/biz/case/${caseId.value}/document-number`, 'POST', {
+      documentNumber: form.documentNumber.trim()
+    })
+    uni.showToast({ title: '提交成功', icon: 'success' })
+    fetchDetail()
+  } catch (error) {
+    console.error(error)
+  } finally {
+    submitLoading.value = false
+  }
 }
 </script>
 
@@ -343,8 +312,9 @@ const previewImage = (currentUrl: string, files: any[]) => {
 
 .text-status-1 { color: #D97706; }
 .text-status-2 { color: #2563EB; }
-.text-status-3 { color: #111827; }
-.text-status-4 { color: #DC2626; }
+.text-status-3 { color: #7C3AED; }
+.text-status-4 { color: #111827; }
+.text-status-5 { color: #DC2626; }
 
 .report-no {
   font-size: 28rpx;
@@ -367,6 +337,12 @@ const previewImage = (currentUrl: string, files: any[]) => {
   margin-bottom: 40rpx;
   padding-left: 16rpx;
   border-left: 6rpx solid #111827;
+}
+
+.hint-text {
+  font-size: 28rpx;
+  color: #6B7280;
+  line-height: 1.6;
 }
 
 .info-list {
@@ -406,16 +382,8 @@ const previewImage = (currentUrl: string, files: any[]) => {
 .text-blue { color: #2563EB; }
 .text-red { color: #DC2626; }
 .font-bold { font-weight: 500; }
-
-.highlight {
-  color: #111827;
-  font-size: 36rpx;
-  font-weight: 600;
-}
-
-.mb-16 {
-  margin-bottom: 16rpx;
-}
+.highlight { font-size: 36rpx; font-weight: 600; }
+.mb-16 { margin-bottom: 16rpx; }
 
 .readonly-box {
   background-color: #F9FAFB;
@@ -429,10 +397,7 @@ const previewImage = (currentUrl: string, files: any[]) => {
   line-height: 1.6;
 }
 
-/* 表单样式 */
-.form-group {
-  margin-bottom: 60rpx;
-}
+.form-group { margin-bottom: 60rpx; }
 
 .form-label {
   display: block;
@@ -453,97 +418,67 @@ const previewImage = (currentUrl: string, files: any[]) => {
   font-size: 32rpx;
   color: #111827;
   border-bottom: 2rpx solid #E5E7EB;
-  transition: all 0.3s;
 }
 
-.form-textarea {
-  width: 100%;
-  height: 240rpx;
-  font-size: 30rpx;
-  color: #111827;
-  background-color: #FFFFFF;
-  border: 2rpx solid #E5E7EB;
-  border-radius: 4rpx;
-  padding: 24rpx;
-  box-sizing: border-box;
-}
+.ph-color { color: #9CA3AF; }
 
-.form-input:focus, .form-textarea:focus {
-  border-color: #111827;
-}
-
-.ph-color {
-  color: #9CA3AF;
-}
-
-/* 上传区域 */
-.upload-grid {
+.video-list {
   display: flex;
   flex-wrap: wrap;
   gap: 20rpx;
 }
 
-.upload-item, .preview-img, .upload-btn {
-  width: 160rpx;
-  height: 160rpx;
-  border-radius: 4rpx;
-}
-
-.upload-item {
+.video-item {
   position: relative;
+  width: 100%;
+  padding: 24rpx;
+  background: #F9FAFB;
+  border: 2rpx solid #E5E7EB;
+  border-radius: 8rpx;
+  box-sizing: border-box;
 }
 
-.upload-img, .preview-img {
-  width: 100%;
-  height: 100%;
-  border-radius: 4rpx;
-}
+.video-name { font-size: 28rpx; color: #374151; }
 
 .delete-btn {
   position: absolute;
-  top: -16rpx;
-  right: -16rpx;
+  top: 16rpx;
+  right: 16rpx;
   width: 40rpx;
   height: 40rpx;
-  background-color: #FFFFFF;
-  color: #111827;
+  background: #fff;
   border: 2rpx solid #E5E7EB;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 24rpx;
-  z-index: 2;
-  box-shadow: 0 2rpx 4rpx rgba(0,0,0,0.1);
 }
 
 .upload-btn {
+  width: 160rpx;
+  height: 160rpx;
   background-color: #F9FAFB;
   border: 2rpx dashed #D1D5DB;
+  border-radius: 4rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-.add-icon {
-  font-size: 40rpx;
-  color: #9CA3AF;
-  margin-bottom: 8rpx;
+.add-icon { font-size: 40rpx; color: #9CA3AF; margin-bottom: 8rpx; }
+.add-text { font-size: 24rpx; color: #6B7280; }
+
+.readonly-video-list { width: 100%; }
+.readonly-video-item {
+  display: block;
+  padding: 20rpx 0;
+  font-size: 28rpx;
+  color: #374151;
+  border-bottom: 2rpx solid #F3F4F6;
 }
 
-.add-text {
-  font-size: 24rpx;
-  color: #6B7280;
-}
-
-.preview-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20rpx;
-}
-
-/* 按钮 */
 .btn-primary {
   background-color: #2563EB;
   color: #FFFFFF;
@@ -554,25 +489,7 @@ const previewImage = (currentUrl: string, files: any[]) => {
   border-radius: 8rpx;
 }
 
-.btn-primary::after {
-  display: none;
-}
-
-.btn-outline-danger {
-  background-color: #FFFFFF;
-  color: #DC2626;
-  font-size: 32rpx;
-  font-weight: 500;
-  height: 96rpx;
-  line-height: 96rpx;
-  border: 2rpx solid #DC2626;
-  border-radius: 8rpx;
-}
-
-.btn-outline-danger::after {
-  display: none;
-}
-
+.btn-primary::after { display: none; }
 .mt-40 { margin-top: 40rpx; }
 .mt-60 { margin-top: 60rpx; }
 </style>

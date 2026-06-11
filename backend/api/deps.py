@@ -74,7 +74,7 @@ def _user_to_ctx_dict(user: SysUser) -> Dict[str, Any]:
         "avatar": user.avatar,
         "roleName": role_name,
         "roles": role_codes,
-        "is_superuser": user.is_superuser,
+        "is_superuser": bool(user.is_superuser),
         "agency_id": user.agency_id,
     }
 

@@ -33,7 +33,7 @@
         </view>
         
         <view class="card-body">
-          <view class="info-row" v-if="item.status === 4 && item.reworkRemark">
+          <view class="info-row" v-if="item.status === 5 && item.reworkRemark">
             <text class="info-label text-red">打回原因</text>
             <text class="info-value text-red font-bold">{{ item.reworkRemark }}</text>
           </view>
@@ -43,9 +43,9 @@
             <text class="info-value font-bold">{{ item.victimName }}</text>
           </view>
           
-          <view class="info-row" @click.stop="callPhone(item.victimPhone)">
+          <view class="info-row" @click.stop="item.status !== 1 && callPhone(item.victimPhone)">
             <text class="info-label">联系电话</text>
-            <text class="info-value text-blue">{{ item.victimPhone }}</text>
+            <text :class="['info-value', item.status !== 1 ? 'text-blue' : '']">{{ item.victimPhone }}</text>
           </view>
 
           <view class="info-row">
@@ -67,9 +67,9 @@
         <view class="card-footer">
           <text class="date-text">{{ item.reportDate }}</text>
           <view class="actions">
-            <button class="action-btn danger" v-if="item.status === 1" @click.stop="handleReject(item)">拒单</button>
-            <button class="action-btn primary" v-if="item.status === 2">去鉴定</button>
-            <button class="action-btn" v-else-if="item.status !== 1">查看卷宗</button>
+            <button class="action-btn primary" v-if="item.status === 1">确认受理</button>
+            <button class="action-btn primary" v-else-if="item.status === 2 || item.status === 5">去鉴定</button>
+            <button class="action-btn" v-else>查看卷宗</button>
           </view>
         </view>
       </view>
@@ -103,34 +103,16 @@ const goToMine = () => {
   uni.navigateTo({ url: '/pages/mine/index' })
 }
 
-const handleReject = (item: any) => {
-  uni.showModal({
-    title: '确认拒单',
-    content: '拒单后将把该案件退回平台重新派单，是否确认？',
-    confirmColor: '#DC2626',
-    success: async (res) => {
-      if (res.confirm) {
-        uni.showLoading({ title: '处理中...' })
-        try {
-          await request(`/biz/case/${item.id}/reject`, 'POST', { reason: '机构主动拒单' })
-          uni.showToast({ title: '已退单并重新分配', icon: 'success' })
-          fetchList(true)
-        } catch (e) {
-          console.error(e)
-        } finally {
-          uni.hideLoading()
-        }
-      }
-    }
-  })
+const callPhone = (phone: string) => {
+  if (!phone || phone.includes('*')) return
+  uni.makePhoneCall({ phoneNumber: phone })
 }
-
-// Tabs配置
 const tabs = [
   { name: '全部', value: null },
-  { name: '鉴定中', value: 2 },
-  { name: '已打回', value: 4 },
-  { name: '已完成', value: 3 }
+  { name: '待确认', value: 1 },
+  { name: '鉴定中', value: 3 },
+  { name: '已打回', value: 5 },
+  { name: '已完成', value: 4 }
 ]
 const currentTab = ref(0)
 
@@ -162,10 +144,11 @@ const getDictLabel = (value: string, _type: string) => {
 
 const getStatusText = (status: number) => {
   const map: Record<number, string> = {
-    1: '待接单',
-    2: '鉴定中',
-    3: '已完成',
-    4: '已打回'
+    1: '待确认',
+    2: '已受理',
+    3: '鉴定中',
+    4: '已完成',
+    5: '已打回'
   }
   return map[status] || '未知'
 }
@@ -217,13 +200,6 @@ const switchTab = (index: number) => {
   if (currentTab.value === index) return
   currentTab.value = index
   fetchList(true)
-}
-
-// 拨打电话
-const callPhone = (phone: string) => {
-  uni.makePhoneCall({
-    phoneNumber: phone
-  })
 }
 
 const goToDetail = (id: string) => {
@@ -350,8 +326,9 @@ onReachBottom(() => {
 
 .status-1 { color: #D97706; }
 .status-2 { color: #2563EB; }
-.status-3 { color: #4B5563; }
-.status-4 { color: #DC2626; }
+.status-3 { color: #7C3AED; }
+.status-4 { color: #111827; }
+.status-5 { color: #DC2626; }
 
 .info-row {
   display: flex;

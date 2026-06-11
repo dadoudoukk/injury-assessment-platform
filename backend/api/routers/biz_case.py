@@ -1,35 +1,47 @@
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, Query
-from sqlalchemy import func, select
+from pydantic import BaseModel
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from api.deps import get_async_db, make_response, require_permission, require_user_with_data_perm, require_user
-from api.helpers import case_record_row
-from core.context import ctx_agency_id, ctx_dept_id, ctx_user_id
-from core.data_perm import apply_data_scope
-from core.region import city_equivalent_values, normalize_region
-from models import AppraisalAgency, BizInsuranceCompany, CaseRecord
-from schemas.business import CaseAppraisalSubmit, CaseRecordCreate, CaseRecordUpdate, CaseRecordExportQuery, CaseRejectBody, CaseReworkBody
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import func, select, extract
 import pandas as pd
 from io import BytesIO
 from starlette.responses import Response
 
+from api.deps import get_async_db, make_response, require_permission, require_user_with_data_perm
+from api.helpers import case_record_row
+from core.context import ctx_agency_id, ctx_dept_id, ctx_user_id
+from core.data_perm import apply_data_scope
+from core.file_validate import MAX_VIDEO_COUNT, validate_video_upload
+from core.paths import UPLOAD_DIR
+from core.region import city_equivalent_values, normalize_region
+from models import AppraisalAgency, BizInsuranceCompany, CaseRecord, SysUser
+from schemas.business import (
+    CaseAppraisalVideosSubmit,
+    CaseDocumentNumberSubmit,
+    CaseRecordCreate,
+    CaseRecordExportQuery,
+    CaseRecordUpdate,
+    CaseReworkBody,
+)
+
 router = APIRouter(prefix="/biz/case", tags=["业务-案件管理"])
 
-VALID_CASE_STATUS = (1, 2, 3)
-STATUS_PENDING = 1
-STATUS_IN_PROGRESS = 2
-STATUS_COMPLETED = 3
-STATUS_REWORK = 4
+STATUS_PENDING_CONFIRM = 1
+STATUS_ACCEPTED = 2
+STATUS_APPRAISING = 3
+STATUS_COMPLETED = 4
+STATUS_REWORK = 5
+
+VALID_CASE_STATUS = (1, 2, 3, 4, 5)
 CASE_STATUS_LABELS = {
-    STATUS_PENDING: "待接单",
-    STATUS_IN_PROGRESS: "鉴定中",
+    STATUS_PENDING_CONFIRM: "待确认",
+    STATUS_ACCEPTED: "已受理",
+    STATUS_APPRAISING: "鉴定中",
     STATUS_COMPLETED: "已完成",
     STATUS_REWORK: "已打回",
 }
@@ -43,8 +55,13 @@ def _parse_case_id(case_id: Union[str, int]) -> Optional[int]:
 
 
 def _resolve_create_status(agency_id: Optional[int]) -> int:
-    """新建案件：有机构则鉴定中，否则待接单。"""
-    return STATUS_IN_PROGRESS if agency_id is not None else STATUS_PENDING
+    """新建/派单：有机构则待确认，否则仍为待确认（待平台派单）。"""
+    return STATUS_PENDING_CONFIRM
+
+
+async def _notify_agency_case_event(case: CaseRecord, event: str) -> None:
+    """TODO: 小程序订阅消息或短信通知鉴定机构（event: assigned / rework）。"""
+    _ = case, event
 
 
 async def _ensure_report_number_available(
@@ -71,7 +88,7 @@ def _release_report_number(report_number: str, case_id: int, deleted_at: datetim
     return f"{report_number[:max_base]}{suffix}"
 
 
-def _report_files_to_db(items: List[Any]) -> List[Dict[str, Any]]:
+def _media_items_to_db(items: List[Any]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for item in items:
         if hasattr(item, "model_dump"):
@@ -86,6 +103,33 @@ def _report_files_to_db(items: List[Any]) -> List[Dict[str, Any]]:
         data["url"] = url
         out.append(data)
     return out
+
+
+def _upload_basename_from_url(url: str) -> Optional[str]:
+    path = urlparse(url).path.strip("/")
+    if not path:
+        return None
+    name = path.split("/")[-1].strip()
+    return name or None
+
+
+def _validate_stored_videos(video_items: List[Dict[str, Any]]) -> Optional[str]:
+    if not video_items:
+        return "请至少上传一个鉴定视频"
+    if len(video_items) > MAX_VIDEO_COUNT:
+        return f"鉴定视频最多 {MAX_VIDEO_COUNT} 个"
+    for item in video_items:
+        url = str(item.get("url") or "").strip()
+        basename = _upload_basename_from_url(url)
+        if not basename:
+            return "视频地址无效"
+        path = UPLOAD_DIR / basename
+        if not path.is_file():
+            return "视频文件不存在或已失效，请重新上传"
+        err = validate_video_upload(path, path.stat().st_size)
+        if err:
+            return err
+    return None
 
 
 def _case_select_with_agency():
@@ -125,17 +169,23 @@ def _apply_case_list_filters(
 
 
 def _apply_agency_case_status_scope(stmt):
-    """机构账号仅可见鉴定中/已完成的指派案件。普通伤者仅可见自己的案件。"""
-    agency_id = ctx_agency_id.get()
-    if agency_id is not None:
-        stmt = stmt.where(CaseRecord.status.in_([STATUS_IN_PROGRESS, STATUS_COMPLETED]))
-        
-    # 如果是普通伤者角色，通过当前用户对应的手机号进行过滤
-    # （这里暂通过上下文中约定的特殊标识或判断机构和部门均为None时的兜底逻辑。
-    # 更严谨的做法是在 ctx 中直接注入当前用户的手机号或角色标识）
-    # 为简便实现，我们可以通过 ctx_user_id 去反查用户 phone，或者在 data_scope 层已处理。
-    # 这里我们添加一个专门的查询过滤逻辑，如果前端传了专门的 C 端标识，或者我们在接口里做判断。
+    """机构账号可见其指派案件的全部流转状态（1~5）。"""
     return stmt
+
+
+def _apply_case_list_order(stmt, *, is_agency: bool, status_filter: Optional[int]):
+    if not is_agency:
+        return stmt.order_by(CaseRecord.id.desc())
+    if status_filter == STATUS_PENDING_CONFIRM:
+        return stmt.order_by(CaseRecord.created_at.desc())
+    if status_filter is not None:
+        return stmt.order_by(CaseRecord.updated_at.desc())
+    pending_first = case((CaseRecord.status == STATUS_PENDING_CONFIRM, 0), else_=1)
+    sort_time = case(
+        (CaseRecord.status == STATUS_PENDING_CONFIRM, CaseRecord.created_at),
+        else_=CaseRecord.updated_at,
+    )
+    return stmt.order_by(pending_first.asc(), sort_time.desc())
 
 
 async def _validate_active_agency(db: AsyncSession, agency_id: int) -> Optional[str]:
@@ -165,7 +215,7 @@ async def _apply_agency_change(
 
     if body.agencyId is None:
         row.agency_id = None
-        row.status = STATUS_PENDING
+        row.status = STATUS_PENDING_CONFIRM
         return None
 
     if body.agencyId == row.agency_id:
@@ -176,7 +226,8 @@ async def _apply_agency_change(
         return agency_err
 
     row.agency_id = body.agencyId
-    row.status = STATUS_IN_PROGRESS
+    row.status = STATUS_PENDING_CONFIRM
+    await _notify_agency_case_event(row, "assigned")
     return None
 
 
@@ -187,11 +238,14 @@ def _build_case_activity(row: CaseRecord, agency_name: Optional[str]) -> Dict[st
     if int(row.status) == STATUS_COMPLETED:
         content = f"案件 {report_no} 由 [{agency_label}] 完成鉴定，出具报告"
         activity_type = "success"
-    elif int(row.status) == STATUS_PENDING:
+    elif int(row.status) == STATUS_PENDING_CONFIRM:
         content = f"新增报案：{row.victim_name} 提交了{row.accident_type}人伤鉴定申请"
         activity_type = "primary"
-    elif int(row.status) == STATUS_IN_PROGRESS:
-        content = f"案件 {report_no} 已派发至 [{agency_label}]，进入鉴定中"
+    elif int(row.status) == STATUS_ACCEPTED:
+        content = f"案件 {report_no} 已由 [{agency_label}] 确认受理"
+        activity_type = "warning"
+    elif int(row.status) == STATUS_APPRAISING:
+        content = f"案件 {report_no} 已由 [{agency_label}] 提交鉴定视频，鉴定中"
         activity_type = "warning"
     elif int(row.status) == STATUS_REWORK:
         remark = (row.rework_remark or "待补充材料").strip()
@@ -226,17 +280,19 @@ async def case_stats(
     status_stmt = select(CaseRecord.status, func.count(CaseRecord.id)).where(*where_criteria).group_by(CaseRecord.status)
     status_rows = (await db.execute(status_stmt)).all()
 
-    status_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+    status_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     total_count = 0
     for r in status_rows:
         st = int(r[0])
         cnt = int(r[1])
-        status_counts[st] = cnt
+        if st in status_counts:
+            status_counts[st] = cnt
         total_count += cnt
 
     status_stats = [
-        {"name": CASE_STATUS_LABELS[STATUS_PENDING], "value": status_counts[STATUS_PENDING]},
-        {"name": CASE_STATUS_LABELS[STATUS_IN_PROGRESS], "value": status_counts[STATUS_IN_PROGRESS]},
+        {"name": CASE_STATUS_LABELS[STATUS_PENDING_CONFIRM], "value": status_counts[STATUS_PENDING_CONFIRM]},
+        {"name": CASE_STATUS_LABELS[STATUS_ACCEPTED], "value": status_counts[STATUS_ACCEPTED]},
+        {"name": CASE_STATUS_LABELS[STATUS_APPRAISING], "value": status_counts[STATUS_APPRAISING]},
         {"name": CASE_STATUS_LABELS[STATUS_COMPLETED], "value": status_counts[STATUS_COMPLETED]},
         {"name": CASE_STATUS_LABELS[STATUS_REWORK], "value": status_counts[STATUS_REWORK]},
     ]
@@ -341,8 +397,9 @@ async def case_stats(
         200,
         data={
             "total": total_count,
-            "pending": status_counts[STATUS_PENDING],
-            "inProgress": status_counts[STATUS_IN_PROGRESS],
+            "pending": status_counts[STATUS_PENDING_CONFIRM],
+            "accepted": status_counts[STATUS_ACCEPTED],
+            "inProgress": status_counts[STATUS_APPRAISING],
             "completed": status_counts[STATUS_COMPLETED],
             "rework": status_counts[STATUS_REWORK],
             "agencyCount": agency_count,
@@ -362,7 +419,7 @@ async def case_list(
     pageSize: int = Query(10, ge=1, le=200, description="每页条数"),
     reportNumber: Optional[str] = Query(None, description="出险报案号模糊搜索"),
     victimName: Optional[str] = Query(None, description="伤者姓名模糊搜索"),
-    status: Optional[int] = Query(None, description="案件状态：1待接单 2鉴定中 3已完成"),
+    status: Optional[int] = Query(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回"),
     insuranceCompany: Optional[str] = Query(None, description="所属保险公司（精确匹配）"),
     agencyId: Optional[int] = Query(None, description="鉴定机构ID（精确匹配）"),
     reportDateStart: Optional[date] = Query(None, description="报案日期起（含）"),
@@ -395,32 +452,29 @@ async def case_list(
     stmt = apply_data_scope(stmt, CaseRecord)
     stmt = _apply_agency_case_status_scope(stmt)
     
-    # C端普通伤者数据隔离：如果当前用户不仅没有机构，而且没有部门，且具有普通用户标识，则仅看自己手机号的案子
-    from models import SysUser
+    # C端普通伤者数据隔离
     current_user_id = ctx_user_id.get()
     if current_user_id:
         user_stmt = select(SysUser.phone).where(SysUser.id == current_user_id)
         user_phone = (await db.scalars(user_stmt)).first()
-        # 假设伤者用户的标志是既没有部门也没有机构
         if ctx_dept_id.get() is None and forced_agency_id is None and user_phone:
-            from sqlalchemy import or_
             stmt = stmt.where(
                 or_(
                     CaseRecord.victim_phone == user_phone,
-                    CaseRecord.created_by == current_user_id
+                    CaseRecord.created_by == current_user_id,
                 )
             )
 
     count_stmt = select(func.count()).select_from(CaseRecord).where(*stmt._where_criteria)
     total = int((await db.scalar(count_stmt)) or 0)
 
-    stmt = stmt.order_by(CaseRecord.id.desc())
+    stmt = _apply_case_list_order(stmt, is_agency=forced_agency_id is not None, status_filter=status)
     stmt = stmt.offset((pageNum - 1) * pageSize).limit(pageSize)
     rows = (await db.execute(stmt)).all()
     return make_response(
         200,
         data={
-            "list": [case_record_row(r[0], r[1]) for r in rows],
+            "list": [case_record_row(r[0], r[1], ctx) for r in rows],
             "pageNum": pageNum,
             "pageSize": pageSize,
             "total": total,
@@ -460,40 +514,35 @@ async def case_export(
     stmt = apply_data_scope(stmt, CaseRecord)
     stmt = _apply_agency_case_status_scope(stmt)
     
-    # C端普通伤者数据隔离：如果当前用户不仅没有机构，而且没有部门，且具有普通用户标识，则仅看自己手机号的案子
-    from models import SysUser
+    # C端普通伤者数据隔离
     current_user_id = ctx_user_id.get()
     if current_user_id:
         user_stmt = select(SysUser.phone).where(SysUser.id == current_user_id)
         user_phone = (await db.scalars(user_stmt)).first()
         if ctx_dept_id.get() is None and forced_agency_id is None and user_phone:
-            from sqlalchemy import or_
             stmt = stmt.where(
                 or_(
                     CaseRecord.victim_phone == user_phone,
-                    CaseRecord.created_by == current_user_id
+                    CaseRecord.created_by == current_user_id,
                 )
             )
 
-    # 限制导出最大数量，防止 OOM
     stmt = stmt.order_by(CaseRecord.id.desc()).limit(10000)
     rows_db = (await db.execute(stmt)).all()
 
-    def _get_status_text(status: int) -> str:
-        if status == 1: return "待接单"
-        if status == 2: return "鉴定中"
-        if status == 3: return "已完成"
-        return "未知"
+    def _get_status_text(st: int) -> str:
+        return CASE_STATUS_LABELS.get(int(st), "未知")
 
     rows_data: List[Dict[str, Any]] = []
     for r in rows_db:
         case = r[0]
         agency_name = r[1]
+        row_data = case_record_row(case, agency_name, ctx)
         rows_data.append(
             {
                 "出险报案号": case.report_number,
-                "伤者姓名": case.victim_name,
-                "联系电话": case.victim_phone,
+                "伤者姓名": row_data["victimName"],
+                "联系电话": row_data["victimPhone"],
                 "报案日期": case.report_date.strftime("%Y-%m-%d") if case.report_date else "",
                 "出险地点": f"{case.province}{case.city}{case.district}",
                 "事故类型": case.accident_type,
@@ -501,6 +550,7 @@ async def case_export(
                 "所属保险公司": case.insurance_company,
                 "案件状态": _get_status_text(case.status),
                 "鉴定机构": agency_name or "",
+                "鉴定文书编号": case.document_number or "",
                 "理赔金额": float(case.appraisal_amount) if case.appraisal_amount else "",
                 "鉴定结论": case.appraisal_conclusion or "",
                 "创建时间": case.created_at.strftime("%Y-%m-%d %H:%M:%S") if case.created_at else "",
@@ -510,7 +560,10 @@ async def case_export(
     def _build_export_excel_bytes() -> bytes:
         df = pd.DataFrame(
             rows_data,
-            columns=["出险报案号", "伤者姓名", "联系电话", "报案日期", "出险地点", "事故类型", "伤情类型", "所属保险公司", "案件状态", "鉴定机构", "理赔金额", "鉴定结论", "创建时间"],
+            columns=[
+                "出险报案号", "伤者姓名", "联系电话", "报案日期", "出险地点", "事故类型", "伤情类型",
+                "所属保险公司", "案件状态", "鉴定机构", "鉴定文书编号", "理赔金额", "鉴定结论", "创建时间",
+            ],
         )
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -556,10 +609,8 @@ async def case_detail(
     if row is None:
         return make_response(500, data={}, msg="案件不存在或无权访问")
 
-    return make_response(200, data=case_record_row(row[0], row[1]), msg="success")
+    return make_response(200, data=case_record_row(row[0], row[1], ctx), msg="success")
 
-
-from pydantic import BaseModel
 
 class C端CaseRecordCreate(BaseModel):
     victimName: str
@@ -651,9 +702,8 @@ async def _auto_dispatch_agency(
     province: str,
     city: str,
     district: str,
-    exclude_agency_ids: Optional[List[int]] = None
 ) -> Optional[int]:
-    """自动派单逻辑：先同区县，找不到再同市。可排除指定的机构 ID。"""
+    """自动派单逻辑：先同区县，找不到再同市。"""
     province, city, district = normalize_region(province, city, district)
     city_variants = city_equivalent_values(province, city)
 
@@ -666,17 +716,11 @@ async def _auto_dispatch_agency(
         )
         if is_district:
             stmt = stmt.where(AppraisalAgency.district == district)
-        if exclude_agency_ids:
-            stmt = stmt.where(AppraisalAgency.id.not_in(exclude_agency_ids))
         return stmt.limit(1)
 
-    # 1. 优先匹配同省、同市、同区县的正常鉴定机构
     agency_id = (await db.scalars(_build_stmt(True))).first()
-
-    # 2. 若区县无匹配机构，兜底扩大到同市级别
     if agency_id is None:
         agency_id = (await db.scalars(_build_stmt(False))).first()
-
     return agency_id
 
 @router.post("", dependencies=[Depends(require_permission("case:add"))])
@@ -790,7 +834,7 @@ async def case_update(
         return make_response(500, data={}, msg="案件不存在或无权访问")
 
     if int(row.status) == STATUS_COMPLETED:
-        return make_response(500, data={}, msg="案件已完成，基础信息不可编辑，如需调整报告请使用「修改报告」")
+        return make_response(500, data={}, msg="案件已完成，基础信息不可编辑")
 
     if body.status is not None:
         if body.status not in VALID_CASE_STATUS:
@@ -870,66 +914,12 @@ async def case_update(
     return make_response(200, data={}, msg="修改成功")
 
 
-@router.post("/{case_id}/reject", dependencies=[Depends(require_permission("case:edit"))])
-async def case_reject(
-    case_id: Union[str, int],
-    body: CaseRejectBody,
-    db: AsyncSession = Depends(get_async_db),
-    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
-) -> Dict[str, Any]:
-    ctx = await require_user_with_data_perm(db, x_access_token)
-    if not ctx:
-        return make_response(401, data={}, msg="登录过期，请重新登录")
-
-    parsed_id = _parse_case_id(case_id)
-    if parsed_id is None:
-        return make_response(500, data={}, msg="案件 ID 无效")
-
-    case = await db.get(CaseRecord, parsed_id)
-    if not case or case.is_delete == 1:
-        return make_response(404, data={}, msg="案件不存在")
-
-    current_agency_id = ctx_agency_id.get()
-    
-    # Check permissions: only assigned agency can reject it, or platform admin
+async def _ensure_agency_case_access(case: CaseRecord, ctx: Dict[str, Any]) -> Optional[str]:
+    current_agency_id = ctx.get("agency_id")
     if current_agency_id is not None and case.agency_id != current_agency_id:
-        return make_response(403, data={}, msg="您无权操作其他机构的案件")
+        return "您无权操作其他机构的案件"
+    return None
 
-    if case.status != 1:
-        return make_response(500, data={}, msg="只有待接单状态的案件才能拒单")
-        
-    rejected_agency_id = case.agency_id
-    if not rejected_agency_id:
-        return make_response(500, data={}, msg="当前案件未分配鉴定机构，无需拒单")
-
-    # Add to rejected list
-    rejected_list = case.rejected_agency_ids or []
-    if rejected_agency_id not in rejected_list:
-        rejected_list.append(rejected_agency_id)
-    
-    # We must explicitly assign a new list object for SQLAlchemy JSON mutation to trigger updates reliably, or use flag_modified
-    from sqlalchemy.orm.attributes import flag_modified
-    case.rejected_agency_ids = rejected_list
-    flag_modified(case, "rejected_agency_ids")
-
-    # Try to re-dispatch
-    new_agency_id = await _auto_dispatch_agency(
-        db, 
-        case.province, 
-        case.city, 
-        case.district, 
-        exclude_agency_ids=rejected_list
-    )
-    
-    case.agency_id = new_agency_id
-    case.status = _resolve_create_status(new_agency_id)
-    
-    await db.commit()
-    
-    if new_agency_id:
-        return make_response(200, data={}, msg="拒单成功，系统已自动重新派发给该地区其他可用机构")
-    else:
-        return make_response(200, data={}, msg="拒单成功，由于该地区暂无其他可用机构，案件已流转至人工客服处理")
 
 @router.post("/{case_id}/accept", dependencies=[Depends(require_permission("case:edit"))])
 async def case_accept(
@@ -949,51 +939,26 @@ async def case_accept(
     if not case or case.is_delete == 1:
         return make_response(404, data={}, msg="案件不存在")
 
-    current_agency_id = ctx_agency_id.get()
-    
-    if current_agency_id is not None and case.agency_id != current_agency_id:
-        return make_response(403, data={}, msg="您无权操作其他机构的案件")
+    access_err = await _ensure_agency_case_access(case, ctx)
+    if access_err:
+        return make_response(403, data={}, msg=access_err)
 
-    if case.status != 1:
-        return make_response(500, data={}, msg="只有待接单状态的案件才能接单")
+    if int(case.status) != STATUS_PENDING_CONFIRM:
+        return make_response(500, data={}, msg="只有待确认状态的案件才能确认受理")
+    if case.agency_id is None:
+        return make_response(500, data={}, msg="案件未分配鉴定机构，无法受理")
 
-    case.status = 2
+    case.status = STATUS_ACCEPTED
+    case.updated_at = datetime.utcnow()
     await db.commit()
-    
-    return make_response(200, data={}, msg="接单成功")
 
-@router.post("/{case_id}/rework", dependencies=[Depends(require_permission("case:edit"))])
-async def case_rework(
+    return make_response(200, data={}, msg="确认受理成功")
+
+
+@router.post("/{case_id}/appraisal-videos", dependencies=[Depends(require_permission("case:appraisal"))])
+async def case_submit_appraisal_videos(
     case_id: Union[str, int],
-    body: CaseReworkBody,
-    db: AsyncSession = Depends(get_async_db),
-    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
-) -> Dict[str, Any]:
-    ctx = await require_user_with_data_perm(db, x_access_token)
-    if not ctx:
-        return make_response(401, data={}, msg="登录过期，请重新登录")
-
-    parsed_id = _parse_case_id(case_id)
-    if parsed_id is None:
-        return make_response(500, data={}, msg="案件 ID 无效")
-
-    case = await db.get(CaseRecord, parsed_id)
-    if not case or case.is_delete == 1:
-        return make_response(404, data={}, msg="案件不存在")
-
-    if case.status != 3:
-        return make_response(500, data={}, msg="只有已完成状态的案件才能打回重做")
-
-    case.status = 4
-    case.rework_remark = body.remark.strip()
-    await db.commit()
-    
-    return make_response(200, data={}, msg="打回成功，案件已退回给原鉴定机构修改")
-
-@router.post("/{case_id}/appraisal", dependencies=[Depends(require_permission("case:appraisal"))])
-async def case_submit_appraisal(
-    case_id: Union[str, int],
-    body: CaseAppraisalSubmit,
+    body: CaseAppraisalVideosSubmit,
     db: AsyncSession = Depends(get_async_db),
     x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
 ) -> Dict[str, Any]:
@@ -1011,35 +976,106 @@ async def case_submit_appraisal(
     if row is None:
         return make_response(500, data={}, msg="案件不存在或无权访问")
 
+    access_err = await _ensure_agency_case_access(row, ctx)
+    if access_err:
+        return make_response(403, data={}, msg=access_err)
+
     current_status = int(row.status)
-    if current_status == STATUS_PENDING:
-        return make_response(500, data={}, msg="案件尚未指派机构，无法提交鉴定报告")
+    if current_status not in (STATUS_ACCEPTED, STATUS_REWORK):
+        return make_response(500, data={}, msg="当前状态不允许提交鉴定视频")
     if row.agency_id is None:
-        return make_response(500, data={}, msg="案件未关联鉴定机构，无法提交鉴定报告")
-    if current_status not in (STATUS_IN_PROGRESS, STATUS_COMPLETED, 4):
-        return make_response(500, data={}, msg="当前案件状态不允许提交鉴定报告")
+        return make_response(500, data={}, msg="案件未关联鉴定机构")
 
-    conclusion = body.appraisalConclusion.strip()
-    if not conclusion:
-        return make_response(500, data={}, msg="鉴定结论不能为空")
+    videos = _media_items_to_db(body.appraisalVideos)
+    video_err = _validate_stored_videos(videos)
+    if video_err:
+        return make_response(500, data={}, msg=video_err)
 
-    report_files = _report_files_to_db(body.reportFiles)
-    if not report_files:
-        return make_response(500, data={}, msg="请至少上传一份报告附件")
+    now = datetime.utcnow()
+    row.appraisal_videos = videos
+    row.status = STATUS_APPRAISING
+    row.updated_at = now
+    await db.commit()
+    return make_response(200, data={}, msg="鉴定视频提交成功")
+
+
+@router.post("/{case_id}/document-number", dependencies=[Depends(require_permission("case:appraisal"))])
+async def case_submit_document_number(
+    case_id: Union[str, int],
+    body: CaseDocumentNumberSubmit,
+    db: AsyncSession = Depends(get_async_db),
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+) -> Dict[str, Any]:
+    ctx = await require_user_with_data_perm(db, x_access_token)
+    if not ctx:
+        return make_response(401, data={}, msg="登录过期，请重新登录")
+
+    parsed_id = _parse_case_id(case_id)
+    if parsed_id is None:
+        return make_response(500, data={}, msg="案件 ID 无效")
+
+    stmt = select(CaseRecord).where(CaseRecord.id == parsed_id, CaseRecord.is_delete == 0)
+    stmt = apply_data_scope(stmt, CaseRecord)
+    row = (await db.scalars(stmt)).first()
+    if row is None:
+        return make_response(500, data={}, msg="案件不存在或无权访问")
+
+    access_err = await _ensure_agency_case_access(row, ctx)
+    if access_err:
+        return make_response(403, data={}, msg=access_err)
+
+    if int(row.status) != STATUS_APPRAISING:
+        return make_response(500, data={}, msg="只有鉴定中状态的案件才能提交文书编号")
+
+    doc_no = body.documentNumber.strip()
+    if not doc_no:
+        return make_response(500, data={}, msg="鉴定文书编号不能为空")
 
     now = datetime.utcnow()
     user_id = ctx_user_id.get()
-    row.appraisal_amount = Decimal(str(body.appraisalAmount))
-    row.appraisal_conclusion = conclusion
-    row.report_files = report_files
+    row.document_number = doc_no
     row.appraisal_submitted_at = now
     row.appraisal_submitted_by = user_id
     row.status = STATUS_COMPLETED
     row.updated_at = now
-
     await db.commit()
-    msg = "报告修改成功" if current_status == STATUS_COMPLETED else "鉴定报告提交成功"
-    return make_response(200, data={}, msg=msg)
+    return make_response(200, data={}, msg="文书编号提交成功，案件已完成")
+
+
+@router.post("/{case_id}/rework", dependencies=[Depends(require_permission("case:edit"))])
+async def case_rework(
+    case_id: Union[str, int],
+    body: CaseReworkBody,
+    db: AsyncSession = Depends(get_async_db),
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+) -> Dict[str, Any]:
+    ctx = await require_user_with_data_perm(db, x_access_token)
+    if not ctx:
+        return make_response(401, data={}, msg="登录过期，请重新登录")
+
+    if ctx.get("agency_id") is not None:
+        return make_response(403, data={}, msg="机构账号无权打回案件")
+
+    parsed_id = _parse_case_id(case_id)
+    if parsed_id is None:
+        return make_response(500, data={}, msg="案件 ID 无效")
+
+    case = await db.get(CaseRecord, parsed_id)
+    if not case or case.is_delete == 1:
+        return make_response(404, data={}, msg="案件不存在")
+
+    if int(case.status) != STATUS_COMPLETED:
+        return make_response(500, data={}, msg="只有已完成状态的案件才能打回重做")
+
+    case.status = STATUS_REWORK
+    case.rework_remark = body.remark.strip()
+    case.appraisal_videos = None
+    case.document_number = None
+    case.updated_at = datetime.utcnow()
+    await db.commit()
+
+    await _notify_agency_case_event(case, "rework")
+    return make_response(200, data={}, msg="打回成功，案件已退回给原鉴定机构重新处理")
 
 
 @router.delete("/{case_id}", dependencies=[Depends(require_permission("case:delete"))])

@@ -141,7 +141,7 @@ class CaseRecordListQuery(BaseModel):
     pageSize: int = Field(10, ge=1, le=200, description="每页条数")
     reportNumber: Optional[str] = Field(None, description="出险报案号模糊搜索")
     victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
-    status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
+    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
     insuranceCompany: Optional[str] = Field(None, description="所属保险公司（精确匹配，中文名称）")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID（精确匹配）")
     reportDateStart: Optional[date] = Field(None, description="报案日期起（含）")
@@ -151,7 +151,7 @@ class CaseRecordListQuery(BaseModel):
 class CaseRecordExportQuery(BaseModel):
     reportNumber: Optional[str] = Field(None, description="出险报案号模糊搜索")
     victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
-    status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
+    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
     insuranceCompany: Optional[str] = Field(None, description="所属保险公司（精确匹配，中文名称）")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID（精确匹配）")
     reportDateStart: Optional[date] = Field(None, description="报案日期起（含）")
@@ -169,7 +169,7 @@ class CaseRecordCreate(BaseModel):
     accidentType: str = Field(..., min_length=1, max_length=50, description="事故类型")
     injuryType: str = Field(..., min_length=1, max_length=50, description="伤情类型")
     insuranceCompany: str = Field(..., min_length=1, max_length=100, description="所属保险公司")
-    status: int = Field(1, description="案件状态：1待接单 2鉴定中 3已完成")
+    status: int = Field(1, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID")
 
 
@@ -184,7 +184,7 @@ class CaseRecordUpdate(BaseModel):
     accidentType: Optional[str] = Field(None, min_length=1, max_length=50, description="事故类型")
     injuryType: Optional[str] = Field(None, min_length=1, max_length=50, description="伤情类型")
     insuranceCompany: Optional[str] = Field(None, min_length=1, max_length=100, description="所属保险公司")
-    status: Optional[int] = Field(None, description="案件状态：1待接单 2鉴定中 3已完成")
+    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID")
 
 
@@ -194,10 +194,17 @@ class ReportFileItem(BaseModel):
     mime: Optional[str] = Field(None, description="MIME 类型")
 
 
-class CaseAppraisalSubmit(BaseModel):
-    appraisalAmount: Decimal = Field(..., gt=0, description="鉴定金额/预估理赔款")
-    appraisalConclusion: str = Field(..., min_length=1, description="鉴定结论")
-    reportFiles: List[ReportFileItem] = Field(..., min_length=1, description="报告附件，至少一项")
+class AppraisalVideoItem(BaseModel):
+    url: str = Field(..., min_length=1, description="视频 URL")
+    name: Optional[str] = Field(None, description="原始文件名")
+
+
+class CaseAppraisalVideosSubmit(BaseModel):
+    appraisalVideos: List[AppraisalVideoItem] = Field(..., min_length=1, max_length=9, description="鉴定视频，至少一项")
+
+
+class CaseDocumentNumberSubmit(BaseModel):
+    documentNumber: str = Field(..., min_length=1, max_length=50, description="鉴定文书编号")
 
 
 class CaseRecordOut(BaseModel):
@@ -218,6 +225,8 @@ class CaseRecordOut(BaseModel):
     appraisalAmount: Optional[str] = None
     appraisalConclusion: Optional[str] = None
     reportFiles: Optional[List[Any]] = None
+    appraisalVideos: Optional[List[Any]] = None
+    documentNumber: Optional[str] = None
     reworkRemark: Optional[str] = None
     appraisalSubmittedAt: Optional[str] = None
     appraisalSubmittedBy: Optional[int] = None
@@ -226,7 +235,8 @@ class CaseRecordOut(BaseModel):
 
 
 class CaseRejectBody(BaseModel):
-    reason: Optional[str] = Field(None, description="拒单原因")
+    reason: Optional[str] = Field(None, description="拒单原因（已废弃，保留模型兼容）")
+
 
 class CaseReworkBody(BaseModel):
     remark: str = Field(..., min_length=1, description="打回重做原因/复议意见")
