@@ -48,4 +48,8 @@ class UserChangeStatusBody(BaseModel):
 
 class UserChangePasswordBody(BaseModel):
     oldPassword: str = Field(..., min_length=1, description="旧密码")
-    newPassword: str = Field(..., min_length=1, description="新密码")
+    newPassword: str = Field(..., min_length=6, description="新密码")
+
+
+class UserSetInitialPasswordBody(BaseModel):
+    newPassword: str = Field(..., min_length=6, description="新密码")

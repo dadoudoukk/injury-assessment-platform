@@ -5,10 +5,11 @@ from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_async_db, make_response, pwd_context, require_permission, require_user
+from api.deps import get_async_db, make_response, require_permission, require_user
+from api.agency_user import bind_agency_admin_user
 from api.helpers import appraisal_agency_row
 from core.region import normalize_region
-from models import AppraisalAgency, CaseRecord, SysRole, SysUser
+from models import AppraisalAgency, CaseRecord
 from schemas.business import AppraisalAgencyAudit, AppraisalAgencyCreate, AppraisalAgencyUpdate
 
 router = APIRouter(prefix="/biz/agency", tags=["业务-鉴定机构管理"])
@@ -308,40 +309,8 @@ async def agency_audit(
     if body.status == 1:
         row.status = 1
         row.audit_remark = None
-        msg = "审核通过"
-        
-        # 自动创建机构管理员账号
-        user_stmt = select(SysUser).where(SysUser.username == row.contact_phone, SysUser.is_delete == 0)
-        existing_user = (await db.scalars(user_stmt)).first()
-        
-        if not existing_user:
-            # 查找或创建机构管理人员角色
-            role_stmt = select(SysRole).where(SysRole.name == "机构管理人员", SysRole.is_delete == 0)
-            agency_role = (await db.scalars(role_stmt)).first()
-            if not agency_role:
-                agency_role = SysRole(
-                    name="机构管理人员",
-                    code="agency_admin",
-                    description="自动创建的机构管理人员角色",
-                    data_scope=4,  # 1全部 2本部门及以下 3本部门 4仅本人 5自定义部门 (机构人员设为仅本人或按需配置)
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
-                )
-                db.add(agency_role)
-                await db.flush()  # 确保角色有 ID
-            
-            new_user = SysUser(
-                username=row.contact_phone,
-                password=pwd_context.hash("123456"),
-                nickname=f"{row.contact_person} (机构管理员)",
-                phone=row.contact_phone,
-                agency_id=row.id,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
-            new_user.roles.append(agency_role)
-            db.add(new_user)
-            msg = "审核通过，已自动生成机构管理员账号，账号为联系电话，初始密码为123456"
+        suffix, _created = await bind_agency_admin_user(db, row)
+        msg = f"审核通过，{suffix}"
     else:
         row.status = 3
         row.audit_remark = audit_remark

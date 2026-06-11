@@ -6,17 +6,21 @@
       <text class="subtitle">让鉴定更透明 · 让理赔更高效</text>
     </view>
 
-    <view class="action-grid">
-      <!-- 已登录用户显示快捷入口 -->
-      <view class="action-card patient-card" v-if="userStore.token" @click="goToMyCases">
+    <view v-if="!sessionReady" class="session-loading">
+      <text class="session-loading-text">加载中...</text>
+    </view>
+
+    <view class="action-grid" v-else>
+      <!-- 已登录机构用户显示快捷入口 -->
+      <view class="action-card patient-card" v-if="showAgencyHub" @click="goToWorkbench">
         <view class="card-content">
-          <text class="card-title">我的案件</text>
-          <text class="card-desc">查进度 / 补充资料</text>
+          <text class="card-title">我的工作台</text>
+          <text class="card-desc">接单处理 / 查看卷宗</text>
         </view>
         <view class="arrow"></view>
       </view>
 
-      <view class="action-card agency-card" v-if="userStore.token" @click="goToMine">
+      <view class="action-card agency-card" v-if="showAgencyHub" @click="goToMine">
         <view class="card-content">
           <text class="card-title">个人中心</text>
           <text class="card-desc">账号信息 / 退出登录</text>
@@ -24,7 +28,7 @@
         <view class="arrow"></view>
       </view>
 
-      <!-- 未登录状态显示原来的入口 -->
+      <!-- 未登录状态显示入口 -->
       <button 
         v-if="!userStore.token"
         class="action-card patient-card" 
@@ -55,11 +59,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { request } from '@/utils/request'
+import { isAgencyUser } from '@/utils/role'
+import { ensureAgencySession } from '@/utils/agency-auth'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
+const sessionReady = ref(!userStore.token)
+
+const showAgencyHub = computed(
+  () => userStore.token && isAgencyUser(userStore.userInfo),
+)
+
+/** 伤者已登录时直接进入案件列表，不展示服务大厅中间页 */
+const redirectPatientIfLoggedIn = async () => {
+  if (!userStore.token) {
+    sessionReady.value = true
+    return
+  }
+  sessionReady.value = false
+  await userStore.fetchUserInfo()
+  if (isAgencyUser(userStore.userInfo)) {
+    sessionReady.value = true
+    await ensureAgencySession(false)
+    return
+  }
+  uni.reLaunch({ url: '/pages/patient/list' })
+}
+
+onShow(() => {
+  redirectPatientIfLoggedIn()
+})
 
 // 点击跳转机构端登录
 const goToAgencyLogin = () => {
@@ -76,13 +108,8 @@ const goToMine = () => {
   uni.navigateTo({ url: '/pages/mine/index' })
 }
 
-const goToMyCases = () => {
-  // 如果是机构用户，去 index/index，否则去 patient/list
-  if (userStore.userInfo?.roleName?.includes('机构') || userStore.userInfo?.roleName?.includes('管理员')) {
-    uni.navigateTo({ url: '/pages/index/index' })
-  } else {
-    uni.navigateTo({ url: '/pages/patient/list' })
-  }
+const goToWorkbench = () => {
+  uni.navigateTo({ url: '/pages/index/index' })
 }
 
 // 伤者端：获取手机号授权
@@ -104,12 +131,16 @@ const onGetPhoneNumber = async (e: any) => {
     
     if (res && res.access_token) {
       userStore.setToken(res.access_token)
+      await userStore.fetchUserInfo()
+      if (isAgencyUser(userStore.userInfo)) {
+        uni.showToast({ title: '该手机号为机构账号，请使用机构入口登录', icon: 'none' })
+        userStore.logout()
+        return
+      }
       uni.showToast({ title: '登录成功', icon: 'success' })
-      
-      // 伤者登录成功，跳转到伤者的列表页/报案页
       setTimeout(() => {
-        uni.navigateTo({ url: '/pages/patient/list' })
-      }, 1000)
+        uni.reLaunch({ url: '/pages/patient/list' })
+      }, 500)
     }
   } catch (error) {
     console.error('Wx login error:', error)
@@ -235,5 +266,18 @@ const onGetPhoneNumber = async (e: any) => {
   color: #2563EB;
   font-weight: 500;
   margin-left: 10rpx;
+}
+
+.session-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120rpx 60rpx;
+}
+
+.session-loading-text {
+  font-size: 28rpx;
+  color: #9CA3AF;
 }
 </style>

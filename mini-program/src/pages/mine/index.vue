@@ -8,7 +8,7 @@
         <text class="phone-number">{{ maskedPhone || "未绑定手机号" }}</text>
       </view>
 
-      <!-- 机构：展示 5 项真实数据 -->
+      <!-- 机构：展示机构信息 -->
       <view v-else class="agency-view">
         <text class="agency-title">{{ userInfo?.agencyName || "未知鉴定机构" }}</text>
         <view class="info-list">
@@ -32,6 +32,10 @@
       </view>
     </view>
 
+    <view v-if="isAgency && !mustChangePassword" class="action-btn" @click="goChangePassword">
+      修改密码
+    </view>
+
     <view class="logout-btn" @click="handleLogout">退出登录</view>
   </view>
 </template>
@@ -40,17 +44,14 @@
 import { computed } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import { useUserStore } from "@/store/modules/user";
+import { isAgencyUser } from "@/utils/role";
+import { ensureAgencySession } from "@/utils/agency-auth";
 
 const userStore = useUserStore();
 
 const userInfo = computed(() => userStore.userInfo);
-
-const isAgency = computed(() => {
-  const info = userInfo.value;
-  if (!info) return false;
-  const roles: string[] = info.roles || [];
-  return !!(info.agencyId || roles.includes("jigou"));
-});
+const isAgency = computed(() => isAgencyUser(userInfo.value));
+const mustChangePassword = computed(() => userInfo.value?.mustChangePassword === true);
 
 const maskedPhone = computed(() => {
   const phone = userInfo.value?.phone || "";
@@ -71,7 +72,14 @@ onShow(async () => {
     return;
   }
   await userStore.fetchUserInfo();
+  if (isAgency.value) {
+    await ensureAgencySession(false);
+  }
 });
+
+const goChangePassword = () => {
+  uni.navigateTo({ url: "/pages/login/change-password" });
+};
 
 const handleLogout = () => {
   uni.showModal({
@@ -168,8 +176,19 @@ const handleLogout = () => {
   word-break: break-all;
 }
 
+.action-btn {
+  margin: 40rpx 30rpx 0;
+  background-color: #ffffff;
+  color: #2563eb;
+  font-size: 32rpx;
+  text-align: center;
+  padding: 28rpx 0;
+  border-radius: 16rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
+}
+
 .logout-btn {
-  margin: 60rpx 30rpx;
+  margin: 24rpx 30rpx 0;
   background-color: #ffffff;
   color: #ef4444;
   font-size: 32rpx;

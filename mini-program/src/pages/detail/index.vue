@@ -147,6 +147,7 @@ import { ref, reactive, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { request, BASE_URL, resolveFileUrl } from '@/utils/request'
 import { isAgencyUser, normalizeCaseStatus } from '@/utils/role'
+import { ensureAgencySession } from '@/utils/agency-auth'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -240,6 +241,10 @@ onLoad(async (options) => {
 onShow(async () => {
   if (userStore.token) {
     await userStore.fetchUserInfo()
+  }
+  if (isAgencyUser(userStore.userInfo)) {
+    const ok = await ensureAgencySession(false)
+    if (!ok) return
   }
   if (skipNextDetailRefresh) {
     skipNextDetailRefresh = false

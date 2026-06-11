@@ -108,9 +108,10 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { onLoad, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app'
 import { request } from '@/utils/request'
 import { normalizeCaseStatus } from '@/utils/role'
+import { ensureAgencySession } from '@/utils/agency-auth'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -242,11 +243,15 @@ const handleAccept = async (item: { id: string }) => {
 }
 
 onLoad(async () => {
-  if (userStore.token) {
-    await userStore.fetchUserInfo()
-  }
+  const ok = await ensureAgencySession()
+  if (!ok) return
   await fetchDicts()
   fetchList(true)
+})
+
+onShow(async () => {
+  if (!userStore.token) return
+  await ensureAgencySession()
 })
 
 onPullDownRefresh(() => {

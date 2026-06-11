@@ -2,7 +2,7 @@
   <view class="container">
     <view class="header-section">
       <text class="page-title">机构入驻申请</text>
-      <text class="page-subtitle">请填写真实的鉴定机构信息，平台审核通过后即可入驻接单</text>
+      <text class="page-subtitle">请填写真实的鉴定机构信息，审核通过后请使用入驻手机号在机构端微信登录</text>
     </view>
 
     <view class="form-section">
@@ -120,7 +120,7 @@ const submitForm = async () => {
     const res = await request('/biz/agency/register', 'POST', form)
     uni.showModal({
       title: '提交成功',
-      content: '您的入驻申请已提交，请耐心等待平台审核。审核通过后将通过短信告知您登录账号。',
+      content: '您的入驻申请已提交，请耐心等待平台审核。审核通过后，请返回首页点击「我是鉴定机构」并使用入驻手机号微信登录。',
       showCancel: false,
       confirmColor: '#2563EB',
       success: () => {

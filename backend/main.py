@@ -28,9 +28,15 @@ from slowapi.middleware import SlowAPIMiddleware
 logger = logging.getLogger(__name__)
 _settings = get_settings()
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
-LOGIN_PATHS = ("/api/login", "/api/login/wx")
+LOGIN_PATHS = ("/api/login", "/api/login/wx", "/api/login/wx/agency")
 # 不走鉴权与接口级限流的匿名 API（登录、登录页公开配置等；操作日志正文解析仍仅用 LOGIN_PATHS）
-ANONYMOUS_API_PATHS = ("/api/login", "/api/login/wx", "/api/sys_config/public", "/api/biz/agency/register")
+ANONYMOUS_API_PATHS = (
+    "/api/login",
+    "/api/login/wx",
+    "/api/login/wx/agency",
+    "/api/sys_config/public",
+    "/api/biz/agency/register",
+)
 
 
 def _is_login_path(path: str) -> bool:

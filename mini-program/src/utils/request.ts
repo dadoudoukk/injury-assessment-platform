@@ -14,7 +14,7 @@ export const resolveFileUrl = (fileUrl: string): string => {
   }
 };
 
-const LOGIN_URLS = ["/login", "/login/wx"];
+const LOGIN_URLS = ["/login", "/login/wx", "/login/wx/agency"];
 
 const isLoginUrl = (url: string) => LOGIN_URLS.some((p) => url.startsWith(p));
 

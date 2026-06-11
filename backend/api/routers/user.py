@@ -26,6 +26,8 @@ from api.helpers import (
     safe_cell_to_str,
     user_row,
 )
+from api.agency_user import must_change_agency_password
+from api.wechat_auth import INITIAL_AGENCY_PASSWORD, PATIENT_WX_PLACEHOLDER_PASSWORD
 from core.config import get_settings
 from models import AppraisalAgency, SysRole, SysUser
 from models.rbac import DataScopeEnum
@@ -37,6 +39,7 @@ from schemas.user import (
     UserEditBody,
     UserExportBody,
     UserListBody,
+    UserSetInitialPasswordBody,
 )
 
 router = APIRouter(prefix="/user", tags=["用户管理"])
@@ -114,6 +117,8 @@ async def user_info(
                 "address": agency.address,
             }
         )
+    if user and user.agency_id:
+        data["mustChangePassword"] = must_change_agency_password(user)
     return make_response(200, data=data, msg="success")
 
 
@@ -143,6 +148,40 @@ async def user_change_password(
     user.password = pwd_context.hash(body.newPassword)
     await db.commit()
     return make_response(200, data={}, msg="密码修改成功，请重新登录")
+
+
+@router.post("/setInitialPassword")
+async def user_set_initial_password(
+    body: UserSetInitialPasswordBody,
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+    db: AsyncSession = Depends(get_async_db),
+) -> Dict[str, Any]:
+    ctx = await require_user(x_access_token)
+    if not ctx:
+        return make_response(401, data={}, msg="登录过期，请重新登录")
+
+    user = (
+        await db.scalars(
+            select(SysUser)
+            .where(SysUser.id == ctx["user_id"], SysUser.is_delete == 0)
+            .options(selectinload(SysUser.roles), selectinload(SysUser.dept))
+        )
+    ).first()
+    if not user:
+        return make_response(401, data={}, msg="登录过期，请重新登录")
+    if not user.agency_id:
+        return make_response(500, data={}, msg="仅机构账号可设置初始密码")
+    if not must_change_agency_password(user):
+        return make_response(500, data={}, msg="当前账号无需设置初始密码，请使用修改密码功能")
+
+    new_password = body.newPassword.strip()
+    if new_password in (INITIAL_AGENCY_PASSWORD, PATIENT_WX_PLACEHOLDER_PASSWORD):
+        return make_response(500, data={}, msg="新密码不能使用系统占位密码")
+
+    user.password = pwd_context.hash(new_password)
+    user.updated_at = datetime.utcnow()
+    await db.commit()
+    return make_response(200, data={}, msg="密码设置成功")
 
 
 @router.post("/list")
