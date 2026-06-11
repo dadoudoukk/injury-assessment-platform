@@ -1,168 +1,181 @@
 <template>
-  <view class="container">
-    <view class="header-section">
-      <view class="user-info">
-        <view class="avatar-placeholder"></view>
-        <view class="info-content">
-          <view class="nickname">{{ userInfo?.name || '未知用户' }}</view>
-          <view class="role-text" v-if="userInfo?.roleName">{{ userInfo?.roleName }}</view>
+  <view class="mine-container">
+    <view class="header-section"></view>
+
+    <view class="content-card">
+      <!-- 伤者：仅展示脱敏手机号 -->
+      <view v-if="!isAgency" class="patient-view">
+        <text class="phone-number">{{ maskedPhone || "未绑定手机号" }}</text>
+      </view>
+
+      <!-- 机构：展示 5 项真实数据 -->
+      <view v-else class="agency-view">
+        <text class="agency-title">{{ userInfo?.agencyName || "未知鉴定机构" }}</text>
+        <view class="info-list">
+          <view class="info-row">
+            <text class="info-label">联系人</text>
+            <text class="info-value">{{ userInfo?.contactPerson || "暂无" }}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label">联系电话</text>
+            <text class="info-value">{{ userInfo?.contactPhone || "暂无" }}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label">省市区</text>
+            <text class="info-value">{{ regionText || "暂无" }}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label">详细地址</text>
+            <text class="info-value address-text">{{ userInfo?.address || "暂无" }}</text>
+          </view>
         </view>
       </view>
     </view>
 
-    <view class="info-section">
-      <view class="section-title">账户信息</view>
-      
-      <view class="info-list">
-        <view class="info-item" v-if="userInfo?.phone">
-          <text class="info-label">绑定手机号</text>
-          <text class="info-value">{{ userInfo.phone }}</text>
-        </view>
-        <view class="info-item" v-if="userInfo?.agencyName">
-          <text class="info-label">所属机构</text>
-          <text class="info-value">{{ userInfo.agencyName }}</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="action-section">
-      <button class="logout-btn" @click="handleLogout">退出登录</button>
-    </view>
+    <view class="logout-btn" @click="handleLogout">退出登录</view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
-import { useUserStore } from '@/store/modules/user'
+import { computed } from "vue";
+import { onShow } from "@dcloudio/uni-app";
+import { useUserStore } from "@/store/modules/user";
 
-const userStore = useUserStore()
+const userStore = useUserStore();
 
-const userInfo = computed(() => userStore.userInfo)
+const userInfo = computed(() => userStore.userInfo);
 
-onShow(() => {
-  if (userStore.token) {
-    userStore.fetchUserInfo()
+const isAgency = computed(() => {
+  const info = userInfo.value;
+  if (!info) return false;
+  const roles: string[] = info.roles || [];
+  return !!(info.agencyId || roles.includes("jigou"));
+});
+
+const maskedPhone = computed(() => {
+  const phone = userInfo.value?.phone || "";
+  if (!phone) return "";
+  return phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2");
+});
+
+const regionText = computed(() => {
+  const info = userInfo.value;
+  if (!info) return "";
+  const parts = [info.province, info.city, info.district].filter(Boolean);
+  return parts.join("");
+});
+
+onShow(async () => {
+  if (!userStore.token) {
+    uni.reLaunch({ url: "/pages/patient/home" });
+    return;
   }
-})
+  await userStore.fetchUserInfo();
+});
 
 const handleLogout = () => {
   uni.showModal({
-    title: '提示',
-    content: '确定要退出登录吗？',
-    confirmColor: '#2563EB',
+    title: "提示",
+    content: "确定要退出登录吗？",
+    confirmColor: "#2563EB",
     success: (res) => {
       if (res.confirm) {
-        userStore.logout()
-        uni.reLaunch({ url: '/pages/patient/home' })
+        userStore.logout();
+        uni.reLaunch({ url: "/pages/patient/home" });
       }
-    }
-  })
-}
+    },
+  });
+};
 </script>
 
-<style scoped>
-.container {
+<style scoped lang="scss">
+.mine-container {
   min-height: 100vh;
-  background-color: #FFFFFF;
-  padding: 60rpx;
-  display: flex;
-  flex-direction: column;
-}
-
-.header-section {
-  padding-top: 40rpx;
-  margin-bottom: 80rpx;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-}
-
-.avatar-placeholder {
-  width: 120rpx;
-  height: 120rpx;
-  background-color: #F3F4F6;
-  border-radius: 8rpx;
-  margin-right: 40rpx;
-}
-
-.info-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.nickname {
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 12rpx;
-}
-
-.role-text {
-  font-size: 26rpx;
-  color: #6B7280;
-}
-
-.info-section {
-  margin-bottom: 80rpx;
-}
-
-.section-title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 40rpx;
-  border-left: 6rpx solid #2563EB;
-  padding-left: 16rpx;
-}
-
-.info-list {
-  border-top: 2rpx solid #E5E7EB;
-}
-
-.info-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 40rpx 0;
-  border-bottom: 2rpx solid #E5E7EB;
-}
-
-.info-label {
-  font-size: 30rpx;
-  color: #4B5563;
-  font-weight: 500;
-}
-
-.info-value {
-  font-size: 30rpx;
-  color: #111827;
-}
-
-.action-section {
-  margin-top: auto;
+  background-color: #f5f7fa;
   padding-bottom: 40rpx;
 }
 
-.logout-btn {
-  background-color: #FFFFFF;
-  color: #EF4444;
-  font-size: 32rpx;
-  font-weight: 500;
-  height: 96rpx;
-  line-height: 96rpx;
-  border: 2rpx solid #EF4444;
-  border-radius: 8rpx;
+.header-section {
+  height: 280rpx;
+  background: linear-gradient(135deg, #2b85e4 0%, #5cadff 100%);
+  border-radius: 0 0 40rpx 40rpx;
+}
+
+.content-card {
+  margin: -80rpx 30rpx 0;
+  background-color: #ffffff;
+  border-radius: 16rpx;
+  padding: 48rpx 36rpx;
+  box-shadow: 0 8rpx 20rpx rgba(0, 0, 0, 0.05);
+  position: relative;
+  z-index: 2;
+}
+
+.patient-view {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120rpx;
+}
+
+.phone-number {
+  font-size: 48rpx;
+  font-weight: 600;
+  color: #111827;
   letter-spacing: 2rpx;
 }
 
-.logout-btn::after {
-  display: none;
+.agency-view {
+  display: flex;
+  flex-direction: column;
 }
 
-.logout-btn:active {
-  background-color: #FEF2F2;
+.agency-title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.4;
+  margin-bottom: 36rpx;
+  padding-bottom: 28rpx;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
+}
+
+.info-row {
+  display: flex;
+  align-items: flex-start;
+  font-size: 28rpx;
+  line-height: 1.5;
+}
+
+.info-label {
+  width: 140rpx;
+  flex-shrink: 0;
+  color: #6b7280;
+}
+
+.info-value {
+  flex: 1;
+  color: #111827;
+}
+
+.address-text {
+  word-break: break-all;
+}
+
+.logout-btn {
+  margin: 60rpx 30rpx;
+  background-color: #ffffff;
+  color: #ef4444;
+  font-size: 32rpx;
+  text-align: center;
+  padding: 28rpx 0;
+  border-radius: 16rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
 }
 </style>

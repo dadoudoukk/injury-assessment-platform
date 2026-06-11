@@ -28,9 +28,17 @@ from slowapi.middleware import SlowAPIMiddleware
 logger = logging.getLogger(__name__)
 _settings = get_settings()
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
-LOGIN_PATHS = ("/api/login",)
+LOGIN_PATHS = ("/api/login", "/api/login/wx")
 # 不走鉴权与接口级限流的匿名 API（登录、登录页公开配置等；操作日志正文解析仍仅用 LOGIN_PATHS）
-ANONYMOUS_API_PATHS = ("/api/login", "/api/sys_config/public", "/api/biz/agency/register")
+ANONYMOUS_API_PATHS = ("/api/login", "/api/login/wx", "/api/sys_config/public", "/api/biz/agency/register")
+
+
+def _is_login_path(path: str) -> bool:
+    return path in LOGIN_PATHS or path.startswith("/api/login/")
+
+
+def _is_anonymous_path(path: str) -> bool:
+    return path in ANONYMOUS_API_PATHS or path.startswith("/api/login/")
 
 app = FastAPI(title="接口调试")
 # 若后续增加安全响应头中间件：请勿对管理端同源 iframe 内嵌 /docs 使用 X-Frame-Options: DENY
@@ -158,8 +166,8 @@ async def oper_log_middleware(request: Request, call_next):
         )
 
     access_token = request.headers.get("x-access-token")
-    is_login_path = raw_path in LOGIN_PATHS
-    is_anonymous_path = raw_path in ANONYMOUS_API_PATHS
+    is_login_path = _is_login_path(raw_path)
+    is_anonymous_path = _is_anonymous_path(raw_path)
     # 登录等匿名接口不走鉴权拦截。
     if cfg_exists and (not is_anonymous_path) and bool(ctrl_cfg.get("auth_required", True)):
         ctx = await require_user(access_token)

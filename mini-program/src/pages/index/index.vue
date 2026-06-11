@@ -1,17 +1,19 @@
 <template>
   <view class="container">
     <!-- 顶部状态切换 Tabs -->
-    <view class="tabs">
-      <view 
-        v-for="(tab, index) in tabs" 
-        :key="index"
-        :class="['tab-item', currentTab === index ? 'active' : '']"
-        @click="switchTab(index)"
-      >
-        <text class="tab-text">{{ tab.name }}</text>
-        <view v-if="currentTab === index" class="tab-line"></view>
+    <scroll-view class="tabs-scroll" scroll-x :show-scrollbar="false">
+      <view class="tabs">
+        <view
+          v-for="(tab, index) in tabs"
+          :key="index"
+          :class="['tab-item', currentTab === index ? 'active' : '']"
+          @click="switchTab(index)"
+        >
+          <text class="tab-text">{{ tab.name }}</text>
+          <view v-if="currentTab === index" class="tab-line"></view>
+        </view>
       </view>
-    </view>
+    </scroll-view>
 
     <!-- 列表区域 -->
     <view class="list-container">
@@ -33,7 +35,7 @@
         </view>
         
         <view class="card-body">
-          <view class="info-row" v-if="item.status === 5 && item.reworkRemark">
+          <view class="info-row" v-if="normalizeStatus(item.status) === 5 && item.reworkRemark">
             <text class="info-label text-red">打回原因</text>
             <text class="info-value text-red font-bold">{{ item.reworkRemark }}</text>
           </view>
@@ -43,9 +45,9 @@
             <text class="info-value font-bold">{{ item.victimName }}</text>
           </view>
           
-          <view class="info-row" @click.stop="item.status !== 1 && callPhone(item.victimPhone)">
+          <view class="info-row" @click.stop="normalizeStatus(item.status) !== 1 && callPhone(item.victimPhone)">
             <text class="info-label">联系电话</text>
-            <text :class="['info-value', item.status !== 1 ? 'text-blue' : '']">{{ item.victimPhone }}</text>
+            <text :class="['info-value', normalizeStatus(item.status) !== 1 ? 'text-blue' : '']">{{ item.victimPhone }}</text>
           </view>
 
           <view class="info-row">
@@ -67,9 +69,22 @@
         <view class="card-footer">
           <text class="date-text">{{ item.reportDate }}</text>
           <view class="actions">
-            <button class="action-btn primary" v-if="item.status === 1">确认受理</button>
-            <button class="action-btn primary" v-else-if="item.status === 2 || item.status === 5">去鉴定</button>
-            <button class="action-btn" v-else>查看卷宗</button>
+            <button
+              class="action-btn primary"
+              v-if="normalizeStatus(item.status) === 1"
+              :loading="acceptingId === item.id"
+              @click.stop="handleAccept(item)"
+            >
+              确认受理
+            </button>
+            <button
+              class="action-btn primary"
+              v-else-if="normalizeStatus(item.status) === 2 || normalizeStatus(item.status) === 5"
+              @click.stop="goToDetail(item.id)"
+            >
+              去鉴定
+            </button>
+            <button class="action-btn" v-else @click.stop="goToDetail(item.id)">查看卷宗</button>
           </view>
         </view>
       </view>
@@ -95,9 +110,11 @@
 import { ref } from 'vue'
 import { onLoad, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
 import { request } from '@/utils/request'
+import { normalizeCaseStatus } from '@/utils/role'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
+const acceptingId = ref('')
 
 const goToMine = () => {
   uni.navigateTo({ url: '/pages/mine/index' })
@@ -110,10 +127,13 @@ const callPhone = (phone: string) => {
 const tabs = [
   { name: '全部', value: null },
   { name: '待确认', value: 1 },
+  { name: '已受理', value: 2 },
   { name: '鉴定中', value: 3 },
   { name: '已打回', value: 5 },
   { name: '已完成', value: 4 }
 ]
+
+const normalizeStatus = normalizeCaseStatus
 const currentTab = ref(0)
 
 // 列表数据与分页
@@ -208,7 +228,23 @@ const goToDetail = (id: string) => {
   })
 }
 
+const handleAccept = async (item: { id: string }) => {
+  acceptingId.value = item.id
+  try {
+    await request(`/biz/case/${item.id}/accept`, 'POST')
+    uni.showToast({ title: '已确认受理', icon: 'success' })
+    fetchList(true)
+  } catch (e) {
+    console.error('Accept case error:', e)
+  } finally {
+    acceptingId.value = ''
+  }
+}
+
 onLoad(async () => {
+  if (userStore.token) {
+    await userStore.fetchUserInfo()
+  }
   await fetchDicts()
   fetchList(true)
 })
@@ -233,22 +269,28 @@ onReachBottom(() => {
 }
 
 /* Tabs */
-.tabs {
-  display: flex;
+.tabs-scroll {
   background-color: #FFFFFF;
   border-bottom: 2rpx solid #E5E7EB;
   position: sticky;
   top: 0;
   z-index: 100;
+  white-space: nowrap;
+}
+
+.tabs {
+  display: inline-flex;
+  min-width: 100%;
 }
 
 .tab-item {
-  flex: 1;
-  display: flex;
+  flex-shrink: 0;
+  display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 96rpx;
+  padding: 0 28rpx;
   position: relative;
 }
 

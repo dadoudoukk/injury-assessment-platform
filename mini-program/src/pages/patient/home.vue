@@ -94,6 +94,8 @@ const onGetPhoneNumber = async (e: any) => {
   
   uni.showLoading({ title: '登录中...' })
   try {
+    // 清除过期 token，避免登录请求携带无效凭证
+    userStore.logout()
     // 真实项目中，后端拿着 e.detail.code 去微信服务器换取真实的手机号
     const res = await request('/login/wx', 'POST', {
       code: e.detail.code,

@@ -91,6 +91,7 @@ async def user_info(
         .options(selectinload(SysUser.agency))
     )).first()
 
+    agency = user.agency if user else None
     data = {
         "id": str(ctx["user_id"]),
         "name": ctx["username"],
@@ -98,10 +99,21 @@ async def user_info(
         "roles": ctx.get("roles") or [],
         "roleName": ctx.get("roleName") or "管理员",
         "agencyId": ctx.get("agency_id"),
-        "agencyName": user.agency.agency_name if user and user.agency else None,
+        "agencyName": agency.agency_name if agency else None,
         "phone": user.phone if user else None,
         "buttons": buttons,
     }
+    if agency:
+        data.update(
+            {
+                "contactPerson": agency.contact_person,
+                "contactPhone": agency.contact_phone,
+                "province": agency.province,
+                "city": agency.city,
+                "district": agency.district,
+                "address": agency.address,
+            }
+        )
     return make_response(200, data=data, msg="success")
 
 

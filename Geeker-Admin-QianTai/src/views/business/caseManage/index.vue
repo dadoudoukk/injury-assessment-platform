@@ -65,9 +65,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="保险公司" prop="insuranceCompany">
-          <el-select v-model="form.insuranceCompany" placeholder="请选择保险公司" clearable style="width: 100%">
-            <el-option v-for="item in insuranceCompanyOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
+          <el-input v-model="form.insuranceCompany" placeholder="请输入保险公司名称" clearable maxlength="100" />
         </el-form-item>
         <el-form-item v-if="!isAgencyMode" label="鉴定机构" prop="agencyId">
           <el-select
@@ -140,7 +138,6 @@ import {
 } from "@/api/modules/bizCase";
 import { getAgencyOptions, type AgencyOption } from "@/api/modules/bizAgency";
 import { getDictByCode, type DictOption } from "@/api/modules/dict";
-import { getInsuranceAll } from "@/api/modules/bizInsurance";
 import { useHandleData } from "@/hooks/useHandleData";
 import { useTenantMode } from "@/hooks/useTenantMode";
 import { decodeRegion, encodeRegion, formatRegionText, validateRegion } from "@/utils/region";
@@ -173,7 +170,6 @@ const dialogTitle = computed(() => {
 
 const accidentTypeOptions = ref<DictOption[]>([]);
 const injuryTypeOptions = ref<DictOption[]>([]);
-const insuranceCompanyOptions = ref<DictOption[]>([]);
 const agencyOptions = ref<AgencyOption[]>([]);
 /** 编辑弹窗内下拉选项（含孤儿临时项） */
 const agencySelectOptions = ref<AgencyOption[]>([]);
@@ -203,18 +199,13 @@ const form = reactive({
 });
 
 onMounted(async () => {
-  const [accidentRes, injuryRes, insuranceRes, agencyRes] = await Promise.all([
+  const [accidentRes, injuryRes, agencyRes] = await Promise.all([
     getDictByCode("biz_accident_type"),
     getDictByCode("biz_injury_type"),
-    getInsuranceAll(),
     getAgencyOptions()
   ]);
   accidentTypeOptions.value = accidentRes.data;
   injuryTypeOptions.value = injuryRes.data;
-  insuranceCompanyOptions.value = (insuranceRes.data || []).map(item => ({
-    label: item.companyName,
-    value: item.companyName
-  }));
   agencyOptions.value = agencyRes.data.list || [];
 });
 
@@ -238,7 +229,7 @@ const rules: FormRules = {
   regionCascader: [{ required: true, validator: validateRegion, trigger: "change" }],
   accidentType: [{ required: true, message: "请选择事故类型", trigger: "change" }],
   injuryType: [{ required: true, message: "请选择伤情类型", trigger: "change" }],
-  insuranceCompany: [{ required: true, message: "请选择保险公司", trigger: "change" }],
+  insuranceCompany: [{ required: true, message: "请输入保险公司", trigger: "blur" }],
   status: [{ required: true, message: "请选择案件状态", trigger: "change" }]
 };
 
@@ -312,7 +303,7 @@ const buildSubmitPayload = (): CaseRecordForm => {
     district: form.district,
     accidentType: form.accidentType,
     injuryType: form.injuryType,
-    insuranceCompany: form.insuranceCompany,
+    insuranceCompany: form.insuranceCompany.trim(),
     status: form.status,
     agencyId: resolveAgencyIdForSubmit()
   };
@@ -528,17 +519,7 @@ const baseColumns: ColumnProps<CaseRecordRow>[] = [
     prop: "insuranceCompany",
     label: "保险公司",
     minWidth: 110,
-    isFilterEnum: false,
-    enum: async () => {
-      const res = await getInsuranceAll();
-      return {
-        data: (res.data || []).map(item => ({
-          label: item.companyName,
-          value: item.companyName
-        }))
-      };
-    },
-    search: { el: "select", props: { placeholder: "请选择保险公司", filterable: true } }
+    search: { el: "input", props: { placeholder: "请输入保险公司" } }
   },
   {
     prop: "agencyId",

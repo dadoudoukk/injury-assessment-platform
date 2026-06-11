@@ -43,9 +43,7 @@ const ACTION_DEFS: ActionDef[] = [
     auth: "case:edit",
     platformOnly: true,
     visible: row =>
-      row.status === CASE_STATUS.PENDING_CONFIRM ||
-      row.status === CASE_STATUS.ACCEPTED ||
-      row.status === CASE_STATUS.APPRAISING,
+      row.status === CASE_STATUS.PENDING_CONFIRM || row.status === CASE_STATUS.ACCEPTED || row.status === CASE_STATUS.APPRAISING,
     onClick: ctx => ctx.openEdit
   },
   {
@@ -63,9 +61,7 @@ const ACTION_DEFS: ActionDef[] = [
     type: "primary",
     auth: "case:appraisal",
     visible: row =>
-      row.status === CASE_STATUS.APPRAISING ||
-      row.status === CASE_STATUS.COMPLETED ||
-      row.status === CASE_STATUS.REWORK,
+      row.status === CASE_STATUS.APPRAISING || row.status === CASE_STATUS.COMPLETED || row.status === CASE_STATUS.REWORK,
     onClick: ctx => row => ctx.openAppraisalDrawer(row, "view")
   },
   {

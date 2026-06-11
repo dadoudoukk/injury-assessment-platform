@@ -7,10 +7,24 @@ from fastapi import APIRouter, File, Header, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from api.deps import make_response, require_user
+from core.config import get_settings
 from core.file_validate import validate_video_upload
 from core.paths import UPLOAD_DIR
 
 router = APIRouter(prefix="/file", tags=["文件上传"])
+
+
+def _resolve_public_base(request: Request) -> str:
+    custom = (get_settings().public_base_url or "").strip().rstrip("/")
+    if custom:
+        return custom
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    forwarded_host = (
+        request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    ).split(",")[0].strip()
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    return str(request.base_url).rstrip("/")
 
 
 @router.post("/upload")
@@ -49,7 +63,7 @@ async def file_upload(
             dest.unlink(missing_ok=True)
             return make_response(500, data={}, msg=err)
 
-    base = str(request.base_url).rstrip("/")
+    base = _resolve_public_base(request)
     file_url = f"{base}/uploads/{new_name}"
     return make_response(200, data={"fileUrl": file_url}, msg="上传成功")
 

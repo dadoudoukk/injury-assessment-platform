@@ -64,6 +64,7 @@ const handleLogin = async () => {
     const res = await request("/login", "POST", form);
     if (res && res.access_token) {
       userStore.setToken(res.access_token);
+      await userStore.fetchUserInfo();
       uni.showToast({ title: "登录成功", icon: "success" });
       setTimeout(() => {
         uni.reLaunch({ url: "/pages/index/index" });

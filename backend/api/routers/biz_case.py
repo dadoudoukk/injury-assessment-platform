@@ -158,7 +158,7 @@ def _apply_case_list_filters(
     if status is not None:
         stmt = stmt.where(CaseRecord.status == status)
     if insurance_company and insurance_company.strip():
-        stmt = stmt.where(CaseRecord.insurance_company == insurance_company.strip())
+        stmt = stmt.where(CaseRecord.insurance_company.like(f"%{insurance_company.strip()}%"))
     if agency_id is not None:
         stmt = stmt.where(CaseRecord.agency_id == agency_id)
     if report_date_start is not None:
@@ -420,7 +420,7 @@ async def case_list(
     reportNumber: Optional[str] = Query(None, description="出险报案号模糊搜索"),
     victimName: Optional[str] = Query(None, description="伤者姓名模糊搜索"),
     status: Optional[int] = Query(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回"),
-    insuranceCompany: Optional[str] = Query(None, description="所属保险公司（精确匹配）"),
+    insuranceCompany: Optional[str] = Query(None, description="所属保险公司（模糊搜索）"),
     agencyId: Optional[int] = Query(None, description="鉴定机构ID（精确匹配）"),
     reportDateStart: Optional[date] = Query(None, description="报案日期起（含）"),
     reportDateEnd: Optional[date] = Query(None, description="报案日期止（含）"),
@@ -622,7 +622,7 @@ class C端CaseRecordCreate(BaseModel):
     accidentType: str
     injuryType: str
     insuranceCompany: str
-    reportNumber: Optional[str] = None # 伤者自己报案时，可能拿不到或者不知道报案号，后端可生成一个
+    reportNumber: str
 
 @router.post("/patient", dependencies=[Depends(require_permission("case:add"))])
 async def case_create_patient(
@@ -642,10 +642,7 @@ async def case_create_patient(
     accident_type = body.accidentType.strip()
     injury_type = body.injuryType.strip()
     insurance_company = body.insuranceCompany.strip()
-    
-    # 如果没传报案号，后端生成一个随机的（例如 TS + 时间戳）
-    import time, random
-    report_number = body.reportNumber.strip() if body.reportNumber else f"TS{int(time.time()*1000)}{random.randint(100,999)}"
+    report_number = body.reportNumber.strip()
 
     if not victim_name:
         return make_response(500, data={}, msg="伤者姓名不能为空")
@@ -657,6 +654,10 @@ async def case_create_patient(
         return make_response(500, data={}, msg="报案城市不能为空")
     if not district:
         return make_response(500, data={}, msg="报案区县不能为空")
+    if not report_number:
+        return make_response(500, data={}, msg="出险报案号不能为空")
+    if not insurance_company:
+        return make_response(500, data={}, msg="所属保险公司不能为空")
 
     province, city, district = normalize_region(province, city, district)
 

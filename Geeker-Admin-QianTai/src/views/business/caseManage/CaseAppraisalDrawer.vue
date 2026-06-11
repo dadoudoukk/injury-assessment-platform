@@ -46,10 +46,7 @@
         </ul>
       </template>
 
-      <el-empty
-        v-if="!hasAnyContent"
-        description="暂无鉴定结果数据"
-      />
+      <el-empty v-if="!hasAnyContent" description="暂无鉴定结果数据" />
     </div>
   </el-drawer>
 </template>

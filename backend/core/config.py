@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     )
     wechat_appid: str = Field(default="", description="微信小程序 AppID")
     wechat_secret: str = Field(default="", description="微信小程序 AppSecret")
+    public_base_url: str = Field(
+        default="",
+        description="对外访问根 URL（如 https://api.example.com），用于生成上传文件链接；为空时从请求头推断",
+    )
 
 
 @lru_cache

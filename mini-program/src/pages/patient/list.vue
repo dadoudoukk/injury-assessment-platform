@@ -55,13 +55,13 @@
       </view>
     </view>
 
-    <!-- 底部固定栏用于跳转个人中心和报案 -->
+    <!-- 底部固定栏：左报案，右退出 -->
     <view class="bottom-action-bar">
-      <view class="nav-item" @click="goToMine">
-        <text class="nav-text">个人中心</text>
-      </view>
       <view class="nav-item primary" @click="goToCreate">
         <text class="nav-text">我要报案</text>
+      </view>
+      <view class="nav-item logout" @click="handleLogout">
+        <text class="nav-text">退出登录</text>
       </view>
     </view>
   </view>
@@ -71,13 +71,26 @@
 import { ref } from "vue";
 import { onLoad, onPullDownRefresh, onReachBottom } from "@dcloudio/uni-app";
 import { request } from "@/utils/request";
+import { useUserStore } from "@/store/modules/user";
 
-const goToMine = () => {
-  uni.navigateTo({ url: "/pages/mine/index" });
-};
+const userStore = useUserStore();
 
 const goToCreate = () => {
   uni.navigateTo({ url: "/pages/patient/create" });
+};
+
+const handleLogout = () => {
+  uni.showModal({
+    title: "提示",
+    content: "确定要退出登录吗？",
+    confirmColor: "#2563EB",
+    success: (res) => {
+      if (res.confirm) {
+        userStore.logout();
+        uni.reLaunch({ url: "/pages/patient/home" });
+      }
+    },
+  });
 };
 
 const goToDetail = (id: string | number) => {
@@ -385,5 +398,9 @@ onReachBottom(() => {
 
 .nav-item.primary .nav-text {
   color: #FFFFFF;
+}
+
+.nav-item.logout .nav-text {
+  color: #EF4444;
 }
 </style>

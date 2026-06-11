@@ -92,22 +92,25 @@
       </view>
 
       <view class="input-group">
+        <text class="label required">出险报案号</text>
+        <input
+          v-model="form.reportNumber"
+          class="input-field"
+          placeholder="请输入保险出险报案号"
+          placeholder-class="ph-color"
+          maxlength="50"
+        />
+      </view>
+
+      <view class="input-group">
         <text class="label required">承保保险公司</text>
-        <picker
-          :range="insuranceCompanyOptions"
-          range-key="dictLabel"
-          @change="onInsuranceChange"
-        >
-          <view class="picker-field">
-            <text :class="form.insuranceCompany ? 'text-black' : 'ph-color'">
-              {{
-                getDictLabel(form.insuranceCompany, insuranceCompanyOptions) ||
-                "请选择保险公司"
-              }}
-            </text>
-            <view class="arrow"></view>
-          </view>
-        </picker>
+        <input
+          v-model="form.insuranceCompany"
+          class="input-field"
+          placeholder="请输入承保保险公司名称"
+          placeholder-class="ph-color"
+          maxlength="100"
+        />
       </view>
 
       <button class="submit-btn" :loading="loading" @click="submitForm">
@@ -133,26 +136,21 @@ const form = reactive({
   district: "",
   accidentType: "",
   injuryType: "",
+  reportNumber: "",
   insuranceCompany: "",
 });
 
 const accidentTypeOptions = ref<any[]>([]);
 const injuryTypeOptions = ref<any[]>([]);
-const insuranceCompanyOptions = ref<any[]>([]);
 
 const fetchDicts = async () => {
   try {
-    const [accRes, injRes, insRes] = await Promise.all([
+    const [accRes, injRes] = await Promise.all([
       request("/dict/data/biz_accident_type", "GET"),
       request("/dict/data/biz_injury_type", "GET"),
-      request("/biz/insurance/all", "GET"),
     ]);
     accidentTypeOptions.value = accRes || [];
     injuryTypeOptions.value = injRes || [];
-    insuranceCompanyOptions.value = (insRes || []).map((item: any) => ({
-      dictLabel: item.companyName,
-      dictValue: item.companyName,
-    }));
   } catch (error) {
     console.error("Fetch dicts error:", error);
   }
@@ -173,9 +171,6 @@ const onAccidentChange = (e: any) =>
   (form.accidentType = accidentTypeOptions.value[e.detail.value].dictValue);
 const onInjuryChange = (e: any) =>
   (form.injuryType = injuryTypeOptions.value[e.detail.value].dictValue);
-const onInsuranceChange = (e: any) =>
-  (form.insuranceCompany =
-    insuranceCompanyOptions.value[e.detail.value].dictValue);
 
 const getDictLabel = (val: string, options: any[]) => {
   const item = options.find((i) => i.dictValue === val);
@@ -192,7 +187,8 @@ const submitForm = async () => {
     !form.district ||
     !form.accidentType ||
     !form.injuryType ||
-    !form.insuranceCompany
+    !form.reportNumber.trim() ||
+    !form.insuranceCompany.trim()
   ) {
     return uni.showToast({ title: "请填写完整的必填项", icon: "none" });
   }
