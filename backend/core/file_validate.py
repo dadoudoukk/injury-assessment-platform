@@ -52,3 +52,17 @@ def validate_video_upload(path: Path, file_size: int) -> Optional[str]:
     if not is_video_content(header):
         return "仅支持上传视频文件（MP4/MOV/WebM/AVI 等），检测到非视频格式"
     return None
+
+
+def is_pdf_content(header: bytes) -> bool:
+    return len(header) >= 5 and header[:5] == b"%PDF-"
+
+
+def validate_pdf_upload(path: Path, file_size: int) -> Optional[str]:
+    """校验 PDF 文件，通过返回 None，否则返回错误文案（不限制大小）。"""
+    if file_size <= 0:
+        return "文件为空"
+    header = read_file_header(path, size=8)
+    if not is_pdf_content(header):
+        return "仅支持上传 PDF 格式的电子证书"
+    return None

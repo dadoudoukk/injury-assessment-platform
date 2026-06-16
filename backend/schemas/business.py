@@ -199,12 +199,18 @@ class AppraisalVideoItem(BaseModel):
     name: Optional[str] = Field(None, description="原始文件名")
 
 
+class ElectronicCertificateItem(BaseModel):
+    url: str = Field(..., min_length=1, description="电子证书 PDF URL")
+    name: Optional[str] = Field(None, description="原始文件名")
+
+
 class CaseAppraisalVideosSubmit(BaseModel):
     appraisalVideos: List[AppraisalVideoItem] = Field(..., min_length=1, max_length=9, description="鉴定视频，至少一项")
 
 
 class CaseDocumentNumberSubmit(BaseModel):
     documentNumber: str = Field(..., min_length=1, max_length=50, description="鉴定文书编号")
+    electronicCertificate: ElectronicCertificateItem = Field(..., description="电子证书 PDF，必填且仅一个")
 
 
 class CaseRecordOut(BaseModel):
@@ -227,6 +233,7 @@ class CaseRecordOut(BaseModel):
     reportFiles: Optional[List[Any]] = None
     appraisalVideos: Optional[List[Any]] = None
     documentNumber: Optional[str] = None
+    electronicCertificate: Optional[Any] = None
     reworkRemark: Optional[str] = None
     appraisalSubmittedAt: Optional[str] = None
     appraisalSubmittedBy: Optional[int] = None

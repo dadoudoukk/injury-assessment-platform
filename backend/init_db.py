@@ -1185,12 +1185,16 @@ def ensure_case_record_appraisal_flow_columns() -> None:
         alters.append(
             "ALTER TABLE biz_case_record ADD COLUMN document_number VARCHAR(50) NULL COMMENT '鉴定文书编号'"
         )
+    if "electronic_certificate" not in cols:
+        alters.append(
+            "ALTER TABLE biz_case_record ADD COLUMN electronic_certificate JSON NULL COMMENT '电子证书 JSON 对象 {name, url}'"
+        )
     if not alters:
         return
     with engine.begin() as conn:
         for sql in alters:
             conn.execute(text(sql))
-    print("已为 biz_case_record 表补充 appraisal_videos / document_number 字段。")
+    print("已为 biz_case_record 表补充 appraisal_videos / document_number / electronic_certificate 字段。")
 
 
 async def main() -> None:

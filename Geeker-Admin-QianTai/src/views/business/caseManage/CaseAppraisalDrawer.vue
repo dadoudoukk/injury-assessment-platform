@@ -23,6 +23,17 @@
         </ul>
       </template>
 
+      <template v-if="detail.electronicCertificate?.url">
+        <div class="section-title">电子证书</div>
+        <ul class="video-list">
+          <li>
+            <el-link :href="detail.electronicCertificate.url" target="_blank" type="primary">
+              {{ detail.electronicCertificate.name || "电子证书.pdf" }}
+            </el-link>
+          </li>
+        </ul>
+      </template>
+
       <template v-if="detail.appraisalAmount || detail.appraisalConclusion">
         <div class="section-title">历史鉴定报告（只读）</div>
         <el-descriptions :column="1" border>
@@ -75,6 +86,7 @@ const hasAnyContent = computed(
   () =>
     !!detail.documentNumber ||
     (detail.appraisalVideos?.length ?? 0) > 0 ||
+    !!detail.electronicCertificate?.url ||
     !!detail.appraisalAmount ||
     !!detail.appraisalConclusion ||
     (detail.reportFiles?.length ?? 0) > 0

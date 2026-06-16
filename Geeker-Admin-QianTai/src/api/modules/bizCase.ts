@@ -15,6 +15,12 @@ export interface AppraisalVideoItem {
   name?: string;
 }
 
+/** 电子证书项 */
+export interface ElectronicCertificateItem {
+  url: string;
+  name?: string;
+}
+
 export interface CaseRecordRow {
   id: string;
   reportNumber: string;
@@ -36,6 +42,7 @@ export interface CaseRecordRow {
   reportFiles?: ReportFileItem[] | null;
   appraisalVideos?: AppraisalVideoItem[] | null;
   documentNumber?: string | null;
+  electronicCertificate?: ElectronicCertificateItem | null;
   appraisalSubmittedAt?: string | null;
   appraisalSubmittedBy?: number | null;
   reworkRemark?: string | null;

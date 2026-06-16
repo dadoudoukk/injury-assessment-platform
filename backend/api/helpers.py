@@ -292,6 +292,23 @@ def _serialize_report_files(raw: Any) -> Optional[List[Any]]:
     return _serialize_json_list(raw)
 
 
+def _serialize_json_object(raw: Any) -> Optional[Any]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    if isinstance(raw, dict):
+        return raw
+    return None
+
+
 def _format_appraisal_amount(amount: Any) -> Optional[str]:
     if amount is None:
         return None
@@ -370,6 +387,7 @@ def case_record_row(
         "reportFiles": _serialize_report_files(r.report_files),
         "appraisalVideos": _serialize_json_list(r.appraisal_videos),
         "documentNumber": r.document_number or None,
+        "electronicCertificate": _serialize_json_object(r.electronic_certificate),
         "reworkRemark": r.rework_remark or None,
         "appraisalSubmittedAt": submitted_at or None,
         "appraisalSubmittedBy": r.appraisal_submitted_by,

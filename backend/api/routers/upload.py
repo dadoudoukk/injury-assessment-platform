@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from api.deps import make_response, require_user
 from core.config import get_settings
-from core.file_validate import validate_video_upload
+from core.file_validate import validate_pdf_upload, validate_video_upload
 from core.paths import UPLOAD_DIR
 
 router = APIRouter(prefix="/file", tags=["文件上传"])
@@ -32,7 +32,7 @@ def _resolve_public_base(request: Request) -> str:
 async def file_upload(
     request: Request,
     file: UploadFile = File(...),
-    category: Optional[str] = Query(None, description="上传类别：video 时强制视频 Magic Bytes 校验"),
+    category: Optional[str] = Query(None, description="上传类别：video/pdf 时强制 Magic Bytes 校验"),
     x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
 ) -> Dict[str, Any]:
     ctx = await require_user(x_access_token)
@@ -57,8 +57,14 @@ async def file_upload(
         await file.close()
 
     file_size = dest.stat().st_size
-    if (category or "").strip().lower() == "video":
+    cat = (category or "").strip().lower()
+    if cat == "video":
         err = validate_video_upload(dest, file_size)
+        if err:
+            dest.unlink(missing_ok=True)
+            return make_response(500, data={}, msg=err)
+    elif cat == "pdf":
+        err = validate_pdf_upload(dest, file_size)
         if err:
             dest.unlink(missing_ok=True)
             return make_response(500, data={}, msg=err)
@@ -79,5 +85,20 @@ async def video_upload(
         request=request,
         file=file,
         category="video",
+        x_access_token=x_access_token,
+    )
+
+
+@router.post("/upload/pdf")
+async def pdf_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+) -> Dict[str, Any]:
+    """电子证书 PDF 专用上传入口，强制 Magic Bytes 校验。"""
+    return await file_upload(
+        request=request,
+        file=file,
+        category="pdf",
         x_access_token=x_access_token,
     )

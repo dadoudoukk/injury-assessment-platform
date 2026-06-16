@@ -109,6 +109,20 @@
             placeholder-class="ph-color"
           />
         </view>
+        <view class="form-group">
+          <text class="form-label required">电子证书</text>
+          <text class="upload-hint">仅支持 PDF 格式，只能上传 1 个</text>
+          <view class="cert-upload-area">
+            <view class="cert-file" v-if="form.electronicCertificate">
+              <text class="cert-name" @click="previewCertificate">{{ form.electronicCertificate.name || '电子证书.pdf' }}</text>
+              <view class="delete-btn cert-delete" @click="removeCertificate">✕</view>
+            </view>
+            <view class="upload-btn cert-upload-btn" @click="chooseCertificate" v-else>
+              <text class="add-icon">+</text>
+              <text class="add-text">上传 PDF</text>
+            </view>
+          </view>
+        </view>
         <button class="btn-primary mt-60" :loading="submitLoading" @click="submitDocumentNumber">提交文书编号</button>
       </template>
 
@@ -118,6 +132,12 @@
           <view class="info-item" v-if="caseDetail.documentNumber">
             <text class="info-label">文书编号</text>
             <text class="info-value highlight">{{ caseDetail.documentNumber }}</text>
+          </view>
+          <view class="info-item" v-if="caseDetail.electronicCertificate?.url">
+            <text class="info-label">电子证书</text>
+            <text class="info-value text-blue" @click="previewServerCertificate">
+              {{ caseDetail.electronicCertificate.name || '查看电子证书' }}
+            </text>
           </view>
           <view class="info-item col-item" v-if="caseDetail.appraisalVideos?.length">
             <text class="info-label mb-16">鉴定视频</text>
@@ -176,9 +196,16 @@ interface AppraisalVideoFormItem {
   thumbBroken?: boolean
 }
 
+interface ElectronicCertificateFormItem {
+  name: string
+  url: string
+  localPath?: string
+}
+
 const form = reactive({
   appraisalVideos: [] as AppraisalVideoFormItem[],
-  documentNumber: ''
+  documentNumber: '',
+  electronicCertificate: null as ElectronicCertificateFormItem | null
 })
 
 let uploadPendingCount = 0
@@ -251,7 +278,7 @@ onShow(async () => {
     return
   }
   // 已有本地未提交视频时不刷新，避免覆盖用户刚选的内容
-  if (caseId.value && form.appraisalVideos.length === 0 && uploadPendingCount === 0) {
+  if (caseId.value && form.appraisalVideos.length === 0 && !form.electronicCertificate && uploadPendingCount === 0) {
     await fetchDetail()
   }
 })
@@ -270,6 +297,12 @@ const fetchDetail = async (options?: { preserveVideos?: boolean }) => {
         initFormVideos(status, res.appraisalVideos)
       }
       form.documentNumber = res.documentNumber || ''
+      form.electronicCertificate = res.electronicCertificate?.url
+        ? {
+            name: res.electronicCertificate.name || '电子证书.pdf',
+            url: resolveFileUrl(res.electronicCertificate.url)
+          }
+        : null
     }
   } catch (error) {
     console.error('Fetch detail error:', error)
@@ -370,6 +403,90 @@ const removeVideo = (index: number) => {
   form.appraisalVideos.splice(index, 1)
 }
 
+const chooseCertificate = () => {
+  skipNextDetailRefresh = true
+  uni.chooseMessageFile({
+    count: 1,
+    type: 'file',
+    extension: ['pdf'],
+    success: (res) => {
+      const file = res.tempFiles[0]
+      if (!file) return
+      uploadCertificate(file.path, file.name || '电子证书.pdf')
+    },
+    fail: () => {
+      uni.showToast({ title: '请选择 PDF 文件', icon: 'none' })
+    }
+  })
+}
+
+const uploadCertificate = (filePath: string, fileName: string) => {
+  beginUploadLoading()
+  const token = userStore.token || uni.getStorageSync('token')
+  uni.uploadFile({
+    url: `${BASE_URL}/file/upload/pdf`,
+    filePath,
+    name: 'file',
+    header: { 'x-access-token': token },
+    success: (uploadRes) => {
+      try {
+        const resData = JSON.parse(uploadRes.data)
+        if (resData.code === 200 && resData.data?.fileUrl) {
+          form.electronicCertificate = {
+            name: fileName,
+            url: resolveFileUrl(resData.data.fileUrl),
+            localPath: filePath
+          }
+          uni.showToast({ title: '上传成功', icon: 'none' })
+        } else {
+          uni.showToast({ title: resData.msg || '上传失败', icon: 'none' })
+        }
+      } catch {
+        uni.showToast({ title: '解析失败', icon: 'none' })
+      }
+    },
+    fail: () => uni.showToast({ title: '上传异常', icon: 'none' }),
+    complete: () => endUploadLoading()
+  })
+}
+
+const removeCertificate = () => {
+  form.electronicCertificate = null
+}
+
+const openPdfDocument = (url: string) => {
+  if (!url) return
+  uni.showLoading({ title: '打开中...', mask: true })
+  uni.downloadFile({
+    url,
+    success: (res) => {
+      if (res.statusCode === 200) {
+        uni.openDocument({
+          filePath: res.tempFilePath,
+          showMenu: true,
+          fail: () => uni.showToast({ title: '无法打开 PDF', icon: 'none' })
+        })
+      } else {
+        uni.showToast({ title: '下载失败', icon: 'none' })
+      }
+    },
+    fail: () => uni.showToast({ title: '下载失败', icon: 'none' }),
+    complete: () => uni.hideLoading()
+  })
+}
+
+const previewCertificate = () => {
+  const cert = form.electronicCertificate
+  if (!cert) return
+  openPdfDocument(cert.localPath || cert.url)
+}
+
+const previewServerCertificate = () => {
+  const cert = caseDetail.value?.electronicCertificate
+  if (!cert?.url) return
+  openPdfDocument(resolveFileUrl(cert.url))
+}
+
 const handleAccept = async () => {
   submitLoading.value = true
   try {
@@ -405,10 +522,17 @@ const submitDocumentNumber = async () => {
   if (!form.documentNumber.trim()) {
     return uni.showToast({ title: '请输入文书编号', icon: 'none' })
   }
+  if (!form.electronicCertificate?.url) {
+    return uni.showToast({ title: '请上传电子证书', icon: 'none' })
+  }
   submitLoading.value = true
   try {
     await request(`/biz/case/${caseId.value}/document-number`, 'POST', {
-      documentNumber: form.documentNumber.trim()
+      documentNumber: form.documentNumber.trim(),
+      electronicCertificate: {
+        name: form.electronicCertificate.name,
+        url: form.electronicCertificate.url
+      }
     })
     uni.showToast({ title: '提交成功', icon: 'success' })
     fetchDetail()
@@ -639,6 +763,34 @@ const submitDocumentNumber = async () => {
 
 .add-icon { font-size: 40rpx; color: #9CA3AF; margin-bottom: 8rpx; }
 .add-text { font-size: 24rpx; color: #6B7280; }
+
+.cert-upload-area { width: 100%; }
+.cert-upload-btn {
+  width: 100%;
+  height: 120rpx;
+}
+.cert-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 30rpx;
+  background: #F9FAFB;
+  border: 2rpx solid #E5E7EB;
+  border-radius: 4rpx;
+}
+.cert-name {
+  flex: 1;
+  font-size: 28rpx;
+  color: #2563EB;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cert-delete {
+  position: static;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
 
 .readonly-video-list { width: 100%; }
 .readonly-video-item {

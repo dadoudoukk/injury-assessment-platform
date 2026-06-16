@@ -16,7 +16,7 @@ from api.deps import get_async_db, make_response, require_permission, require_us
 from api.helpers import case_record_row
 from core.context import ctx_agency_id, ctx_dept_id, ctx_user_id
 from core.data_perm import apply_data_scope
-from core.file_validate import MAX_VIDEO_COUNT, validate_video_upload
+from core.file_validate import MAX_VIDEO_COUNT, validate_pdf_upload, validate_video_upload
 from core.paths import UPLOAD_DIR
 from core.region import city_equivalent_values, normalize_region
 from models import AppraisalAgency, BizInsuranceCompany, CaseRecord, SysUser
@@ -105,6 +105,11 @@ def _media_items_to_db(items: List[Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def _media_item_to_db(item: Any) -> Optional[Dict[str, Any]]:
+    items = _media_items_to_db([item])
+    return items[0] if items else None
+
+
 def _upload_basename_from_url(url: str) -> Optional[str]:
     path = urlparse(url).path.strip("/")
     if not path:
@@ -129,6 +134,20 @@ def _validate_stored_videos(video_items: List[Dict[str, Any]]) -> Optional[str]:
         err = validate_video_upload(path, path.stat().st_size)
         if err:
             return err
+    return None
+
+
+def _validate_stored_certificate(cert: Dict[str, Any]) -> Optional[str]:
+    url = str(cert.get("url") or "").strip()
+    basename = _upload_basename_from_url(url)
+    if not basename:
+        return "电子证书地址无效"
+    path = UPLOAD_DIR / basename
+    if not path.is_file():
+        return "电子证书文件不存在或已失效，请重新上传"
+    err = validate_pdf_upload(path, path.stat().st_size)
+    if err:
+        return err
     return None
 
 
@@ -1032,9 +1051,17 @@ async def case_submit_document_number(
     if not doc_no:
         return make_response(500, data={}, msg="鉴定文书编号不能为空")
 
+    certificate = _media_item_to_db(body.electronicCertificate)
+    if not certificate:
+        return make_response(500, data={}, msg="请上传电子证书")
+    cert_err = _validate_stored_certificate(certificate)
+    if cert_err:
+        return make_response(500, data={}, msg=cert_err)
+
     now = datetime.utcnow()
     user_id = ctx_user_id.get()
     row.document_number = doc_no
+    row.electronic_certificate = certificate
     row.appraisal_submitted_at = now
     row.appraisal_submitted_by = user_id
     row.status = STATUS_COMPLETED

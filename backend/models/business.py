@@ -171,6 +171,9 @@ class CaseRecord(SoftDeleteMixin, Base):
     document_number: Mapped[Optional[str]] = mapped_column(
         String(50), nullable=True, comment="鉴定文书编号"
     )
+    electronic_certificate: Mapped[Optional[Any]] = mapped_column(
+        JSON, nullable=True, comment="电子证书 JSON 对象 {name, url}"
+    )
     appraisal_submitted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True, comment="报告提交时间"
     )
