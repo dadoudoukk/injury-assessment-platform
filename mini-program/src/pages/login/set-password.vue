@@ -5,6 +5,7 @@
     <LoadingState v-if="sessionChecking" fullscreen />
 
     <view v-else class="password-page__body">
+      <view class="password-page__form">
       <FormSection title="密码信息">
         <FormField
           v-model="form.newPassword"
@@ -26,6 +27,7 @@
 
       <view class="password-page__logout" @click="handleLogout">
         <text class="password-page__logout-text">{{ PASSWORD_COPY.logoutLink }}</text>
+      </view>
       </view>
     </view>
 
@@ -144,6 +146,11 @@ const handleLogout = async () => {
 
 .password-page__body {
   padding: 0 $space-xl;
+}
+
+.password-page__form {
+  position: relative;
+  z-index: 10;
 }
 
 .password-page__logout {

@@ -6,14 +6,14 @@
     <text v-if="hint" class="form-field__hint">{{ hint }}</text>
 
     <!-- 自定义控件（picker 等） -->
-    <view v-if="$slots.default" class="form-field__control">
+    <view v-if="custom" class="form-field__control">
       <slot />
     </view>
 
-    <!-- 普通输入框：组件内直接用 v-model，避免小程序端受控 input 不更新 -->
+    <!-- 普通输入框：显式 v-if 避免 v-else 编译异常，本地值先行更新避免输入被父级旧值回刷 -->
     <input
-      v-else
-      v-model="modelValue"
+      v-if="!custom"
+      :value="innerValue"
       class="form-field__input"
       :class="{ 'form-field__input--error': !!error }"
       :type="inputType"
@@ -21,7 +21,9 @@
       :placeholder="placeholder"
       :maxlength="maxlength"
       :adjust-position="true"
+      :hold-keyboard="true"
       placeholder-class="form-field__placeholder"
+      @input="onInput"
     />
 
     <text v-if="error" class="form-field__error">{{ error }}</text>
@@ -29,8 +31,11 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(
+import { ref, watch } from 'vue'
+
+const props = withDefaults(
   defineProps<{
+    modelValue?: string
     label: string
     placeholder?: string
     required?: boolean
@@ -39,14 +44,38 @@ withDefaults(
     inputType?: string
     password?: boolean
     maxlength?: number
+    custom?: boolean
   }>(),
   {
     inputType: 'text',
     password: false,
+    maxlength: 140,
+    custom: false,
   },
 )
 
-const modelValue = defineModel<string>({ default: '' })
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+}>()
+
+const innerValue = ref(props.modelValue ?? '')
+
+watch(
+  () => props.modelValue,
+  (value) => {
+    const next = value ?? ''
+    if (next !== innerValue.value) {
+      innerValue.value = next
+    }
+  },
+)
+
+function onInput(event: InputEvent) {
+  const next = (event as InputEvent & { detail: { value: string } }).detail.value
+  innerValue.value = next
+  emit('update:modelValue', next)
+  return next
+}
 </script>
 
 <style scoped lang="scss">

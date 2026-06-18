@@ -17,6 +17,28 @@ export interface FileUploadOptions {
   loadingTitle?: string
 }
 
+interface PickedFile {
+  path?: string
+  tempFilePath?: string
+  name?: string
+}
+
+interface ChooseFileResult {
+  tempFiles?: PickedFile[]
+}
+
+interface ChooseFileOptions {
+  count: number
+  type: 'file'
+  extension?: string[]
+  success: (res: ChooseFileResult) => void
+  fail: () => void
+}
+
+interface FilePickerApi {
+  chooseFile?: (options: ChooseFileOptions) => void
+}
+
 /** 视频 / PDF 上传封装，供案件详情等页面复用 */
 export function useFileUpload(options: FileUploadOptions = {}) {
   const userStore = useUserStore()
@@ -98,6 +120,55 @@ export function useFileUpload(options: FileUploadOptions = {}) {
     }))
   }
 
+  function getLocalFilePicker(): FilePickerApi['chooseFile'] | undefined {
+    const uniApi = uni as unknown as FilePickerApi
+    if (typeof uniApi.chooseFile === 'function') return uniApi.chooseFile.bind(uniApi)
+
+    const wxApi = (globalThis as { wx?: FilePickerApi }).wx
+    if (typeof wxApi?.chooseFile === 'function') return wxApi.chooseFile.bind(wxApi)
+
+    return undefined
+  }
+
+  function resolvePickedFile(file?: PickedFile): { path: string; name: string } | null {
+    const filePath = file?.path || file?.tempFilePath
+    if (!filePath) return null
+    return {
+      path: filePath,
+      name: file.name || '电子证书.pdf',
+    }
+  }
+
+  async function uploadPickedPdf(file?: PickedFile): Promise<UploadedFileItem | null> {
+    const picked = resolvePickedFile(file)
+    if (!picked) return null
+
+    try {
+      const item = await uploadPdf(picked.path, picked.name)
+      uni.showToast({ title: '上传成功', icon: 'none' })
+      return item
+    } catch {
+      return null
+    }
+  }
+
+  function chooseMessagePdfFile(): Promise<UploadedFileItem | null> {
+    return new Promise((resolve) => {
+      uni.chooseMessageFile({
+        count: 1,
+        type: 'file',
+        extension: ['pdf'],
+        success: async (res) => {
+          resolve(await uploadPickedPdf(res.tempFiles[0]))
+        },
+        fail: () => {
+          uni.showToast({ title: '请选择 PDF 文件', icon: 'none' })
+          resolve(null)
+        },
+      })
+    })
+  }
+
   function chooseAndUploadVideo(
     currentCount: number,
     maxCount = options.maxCount ?? 9,
@@ -138,30 +209,26 @@ export function useFileUpload(options: FileUploadOptions = {}) {
   }
 
   function chooseAndUploadPdf(): Promise<UploadedFileItem | null> {
-    return new Promise((resolve) => {
-      uni.chooseMessageFile({
-        count: 1,
-        type: 'file',
-        extension: ['pdf'],
-        success: async (res) => {
-          const file = res.tempFiles[0]
-          if (!file) {
-            resolve(null)
-            return
-          }
-          try {
-            const item = await uploadPdf(file.path, file.name || '电子证书.pdf')
-            uni.showToast({ title: '上传成功', icon: 'none' })
-            resolve(item)
-          } catch {
-            resolve(null)
-          }
-        },
-        fail: () => {
-          uni.showToast({ title: '请选择 PDF 文件', icon: 'none' })
-          resolve(null)
-        },
+    const chooseFile = getLocalFilePicker()
+    if (chooseFile) {
+      return new Promise((resolve) => {
+        chooseFile({
+          count: 1,
+          type: 'file',
+          extension: ['pdf'],
+          success: async (res) => {
+            resolve(await uploadPickedPdf(res.tempFiles?.[0]))
+          },
+          fail: () => resolve(null),
+        })
       })
+    }
+
+    uni.showToast({ title: '当前微信版本不支持本地文件选择，请从聊天文件选择 PDF', icon: 'none' })
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        chooseMessagePdfFile().then(resolve)
+      }, 1200)
     })
   }
 

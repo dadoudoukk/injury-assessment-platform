@@ -28,7 +28,7 @@
         :title="CASE_FORM_COPY.accidentSection"
         :description="CASE_FORM_COPY.accidentDesc"
       >
-        <FormField label="出险日期" required :error="fieldErrors.reportDate">
+        <FormField label="出险日期" required custom :error="fieldErrors.reportDate">
           <picker mode="date" :value="form.reportDate" @change="onDateChange">
             <view class="picker-field">
               <text :class="form.reportDate ? 'picker-field__value' : 'picker-field__placeholder'">
@@ -39,7 +39,7 @@
           </picker>
         </FormField>
 
-        <FormField label="出险地点" required :error="fieldErrors.province">
+        <FormField label="出险地点" required custom :error="fieldErrors.province">
           <picker mode="region" @change="onRegionChange">
             <view class="picker-field">
               <text :class="form.province ? 'picker-field__value' : 'picker-field__placeholder'">
@@ -50,7 +50,7 @@
           </picker>
         </FormField>
 
-        <FormField label="事故类型" required :error="fieldErrors.accidentType">
+        <FormField label="事故类型" required custom :error="fieldErrors.accidentType">
           <picker
             :range="accidentTypeOptions"
             range-key="dictLabel"
@@ -65,7 +65,7 @@
           </picker>
         </FormField>
 
-        <FormField label="伤情类型" required :error="fieldErrors.injuryType">
+        <FormField label="伤情类型" required custom :error="fieldErrors.injuryType">
           <picker
             :range="injuryTypeOptions"
             range-key="dictLabel"
@@ -236,8 +236,11 @@ const submitForm = async () => {
   height: 200rpx;
 }
 
+picker {
+  width: 100%;
+}
+
 .picker-field {
-  @include input-container;
   display: flex;
   align-items: center;
   justify-content: space-between;

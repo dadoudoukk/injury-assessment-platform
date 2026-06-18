@@ -3,6 +3,7 @@
     <PageHeader :title="PASSWORD_COPY.changeTitle" :subtitle="PASSWORD_COPY.changeSubtitle" />
 
     <view class="password-page__body">
+      <view class="password-page__form">
       <FormSection title="密码信息">
         <FormField
           v-model="form.oldPassword"
@@ -29,6 +30,7 @@
           :error="fieldErrors.confirmPassword"
         />
       </FormSection>
+      </view>
     </view>
 
     <view class="password-page__spacer" />
@@ -112,6 +114,11 @@ const handleSubmit = async () => {
 
 .password-page__body {
   padding: 0 $space-xl;
+}
+
+.password-page__form {
+  position: relative;
+  z-index: 10;
 }
 
 .password-page__spacer {

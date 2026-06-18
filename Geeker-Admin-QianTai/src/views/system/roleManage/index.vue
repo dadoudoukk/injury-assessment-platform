@@ -242,7 +242,7 @@ const openMenuAuth = async (row: RoleRow) => {
     treeData.value = (treeRes as any).data ?? [];
     await nextTick();
     const ids = ((idsRes as any).data ?? []) as number[];
-    treeRef.value?.setCheckedKeys(ids, false);
+    treeRef.value?.setCheckedKeys(ids, true);
   } catch {
     treeData.value = [];
   } finally {

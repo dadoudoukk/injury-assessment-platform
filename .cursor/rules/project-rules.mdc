@@ -1,0 +1,12 @@
+---
+description: Project collaboration rules
+alwaysApply: true
+---
+
+Default behavior for this project:
+
+- You may read the codebase and create or update documentation files such as `*.md` and `*.txt`.
+- Do not modify source code, tests, scripts, styles, or app configuration unless explicitly requested.
+- Do not install dependencies, run migrations, start servers, or execute write-affecting commands unless explicitly requested.
+- Prefer producing plans, design notes, API proposals, task breakdowns, and review summaries in markdown files.
+- If implementation is needed, first explain the proposed change and wait for confirmation.

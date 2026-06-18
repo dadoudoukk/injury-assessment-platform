@@ -38,7 +38,7 @@
         :title="AGENCY_REGISTER_COPY.addressSection"
         :description="AGENCY_REGISTER_COPY.addressDesc"
       >
-        <FormField label="所在地区" required :error="fieldErrors.province">
+        <FormField label="所在地区" required custom :error="fieldErrors.province">
           <picker mode="region" @change="onRegionChange">
             <view class="picker-field">
               <text :class="form.province ? 'picker-field__value' : 'picker-field__placeholder'">
@@ -210,8 +210,11 @@ const submitForm = async () => {
   height: 200rpx;
 }
 
+picker {
+  width: 100%;
+}
+
 .picker-field {
-  @include input-container;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -245,10 +248,13 @@ const submitForm = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: $space-md;
   margin-bottom: $space-sm;
 }
 
 .agency-register-page__address-label {
+  flex: 1;
+  min-width: 0;
   font-size: $font-size-body;
   color: $color-body;
   font-weight: 500;
@@ -261,15 +267,15 @@ const submitForm = async () => {
 .agency-register-page__map-btn {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   font-size: $font-size-caption;
   color: $color-primary;
-  background-color: #eff6ff;
-  padding: 6rpx 16rpx;
-  border-radius: 999rpx;
+  padding: 4rpx 0;
 }
 
 .agency-register-page__map-icon {
-  margin-right: 6rpx;
+  margin-right: 4rpx;
+  font-size: $font-size-caption;
 }
 
 .agency-register-page__textarea {
