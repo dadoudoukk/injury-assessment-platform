@@ -1,311 +1,265 @@
 <template>
-  <view class="container">
-    <view class="header-section">
-      <text class="page-title">我要报案</text>
-      <text class="page-subtitle"
-        >请如实填写案件信息，我们将为您就近分派鉴定机构</text
+  <view class="case-create-page">
+    <PageHeader :title="CASE_FORM_COPY.title" :subtitle="CASE_FORM_COPY.subtitle" />
+
+    <view class="case-create-page__body">
+      <FormSection
+        :title="CASE_FORM_COPY.partySection"
+        :description="CASE_FORM_COPY.partyDesc"
       >
-    </view>
-
-    <view class="form-section">
-      <view class="input-group">
-        <text class="label required">伤者姓名</text>
-        <input
+        <FormField
           v-model="form.victimName"
-          class="input-field"
+          label="伤者姓名"
           placeholder="请输入伤者真实姓名"
-          placeholder-class="ph-color"
+          required
+          :error="fieldErrors.victimName"
         />
-      </view>
-
-      <view class="input-group">
-        <text class="label required">联系电话</text>
-        <input
+        <FormField
           v-model="form.victimPhone"
-          class="input-field"
-          type="number"
+          label="联系电话"
           placeholder="请输入联系电话"
-          placeholder-class="ph-color"
+          input-type="number"
+          required
+          :error="fieldErrors.victimPhone"
         />
-      </view>
+      </FormSection>
 
-      <view class="input-group">
-        <text class="label required">出险日期</text>
-        <picker mode="date" :value="form.reportDate" @change="onDateChange">
-          <view class="picker-field">
-            <text :class="form.reportDate ? 'text-black' : 'ph-color'">
-              {{ form.reportDate || "请选择出险日期" }}
-            </text>
-            <view class="arrow"></view>
-          </view>
-        </picker>
-      </view>
+      <FormSection
+        :title="CASE_FORM_COPY.accidentSection"
+        :description="CASE_FORM_COPY.accidentDesc"
+      >
+        <FormField label="出险日期" required :error="fieldErrors.reportDate">
+          <picker mode="date" :value="form.reportDate" @change="onDateChange">
+            <view class="picker-field">
+              <text :class="form.reportDate ? 'picker-field__value' : 'picker-field__placeholder'">
+                {{ form.reportDate || '请选择出险日期' }}
+              </text>
+              <view class="picker-field__arrow" />
+            </view>
+          </picker>
+        </FormField>
 
-      <view class="input-group">
-        <text class="label required">出险地点</text>
-        <picker mode="region" @change="onRegionChange">
-          <view class="picker-field">
-            <text :class="form.province ? 'text-black' : 'ph-color'">
-              {{ form.province ? `${form.province} ${form.city} ${form.district}` : '请选择省/市/区' }}
-            </text>
-            <view class="arrow"></view>
-          </view>
-        </picker>
-      </view>
+        <FormField label="出险地点" required :error="fieldErrors.province">
+          <picker mode="region" @change="onRegionChange">
+            <view class="picker-field">
+              <text :class="form.province ? 'picker-field__value' : 'picker-field__placeholder'">
+                {{ regionText }}
+              </text>
+              <view class="picker-field__arrow" />
+            </view>
+          </picker>
+        </FormField>
 
-      <view class="input-group">
-        <text class="label required">事故类型</text>
-        <picker
-          :range="accidentTypeOptions"
-          range-key="dictLabel"
-          @change="onAccidentChange"
-        >
-          <view class="picker-field">
-            <text :class="form.accidentType ? 'text-black' : 'ph-color'">
-              {{
-                getDictLabel(form.accidentType, accidentTypeOptions) ||
-                "请选择事故类型"
-              }}
-            </text>
-            <view class="arrow"></view>
-          </view>
-        </picker>
-      </view>
+        <FormField label="事故类型" required :error="fieldErrors.accidentType">
+          <picker
+            :range="accidentTypeOptions"
+            range-key="dictLabel"
+            @change="onAccidentChange"
+          >
+            <view class="picker-field">
+              <text :class="form.accidentType ? 'picker-field__value' : 'picker-field__placeholder'">
+                {{ getAccidentTypeLabel(form.accidentType) || '请选择事故类型' }}
+              </text>
+              <view class="picker-field__arrow" />
+            </view>
+          </picker>
+        </FormField>
 
-      <view class="input-group">
-        <text class="label required">伤情类型</text>
-        <picker
-          :range="injuryTypeOptions"
-          range-key="dictLabel"
-          @change="onInjuryChange"
-        >
-          <view class="picker-field">
-            <text :class="form.injuryType ? 'text-black' : 'ph-color'">
-              {{
-                getDictLabel(form.injuryType, injuryTypeOptions) ||
-                "请选择伤情类型"
-              }}
-            </text>
-            <view class="arrow"></view>
-          </view>
-        </picker>
-      </view>
+        <FormField label="伤情类型" required :error="fieldErrors.injuryType">
+          <picker
+            :range="injuryTypeOptions"
+            range-key="dictLabel"
+            @change="onInjuryChange"
+          >
+            <view class="picker-field">
+              <text :class="form.injuryType ? 'picker-field__value' : 'picker-field__placeholder'">
+                {{ getInjuryTypeLabel(form.injuryType) || '请选择伤情类型' }}
+              </text>
+              <view class="picker-field__arrow" />
+            </view>
+          </picker>
+        </FormField>
+      </FormSection>
 
-      <view class="input-group">
-        <text class="label required">出险报案号</text>
-        <input
+      <FormSection
+        :title="CASE_FORM_COPY.insuranceSection"
+        :description="CASE_FORM_COPY.insuranceDesc"
+      >
+        <FormField
           v-model="form.reportNumber"
-          class="input-field"
+          label="出险报案号"
           placeholder="请输入保险出险报案号"
-          placeholder-class="ph-color"
-          maxlength="50"
+          :maxlength="50"
+          required
+          :error="fieldErrors.reportNumber"
         />
-      </view>
-
-      <view class="input-group">
-        <text class="label required">承保保险公司</text>
-        <input
+        <FormField
           v-model="form.insuranceCompany"
-          class="input-field"
+          label="承保保险公司"
           placeholder="请输入承保保险公司名称"
-          placeholder-class="ph-color"
-          maxlength="100"
+          :maxlength="100"
+          required
+          :error="fieldErrors.insuranceCompany"
         />
-      </view>
-
-      <button class="submit-btn" :loading="loading" @click="submitForm">
-        提交报案
-      </button>
+      </FormSection>
     </view>
+
+    <view class="case-create-page__spacer" />
+
+    <SubmitBar
+      fixed
+      :text="CASE_FORM_COPY.submit"
+      :hint="CASE_FORM_COPY.submitHint"
+      :loading="loading"
+      @submit="submitForm"
+    />
   </view>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from "vue";
-import { onLoad } from "@dcloudio/uni-app";
-import { request } from "@/utils/request";
+import { computed, reactive, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { createPatientCase } from '@/api/case'
+import PageHeader from '@/components/common/PageHeader.vue'
+import FormField from '@/components/form/FormField.vue'
+import FormSection from '@/components/form/FormSection.vue'
+import SubmitBar from '@/components/form/SubmitBar.vue'
+import { useCaseDict } from '@/composables/useCaseDict'
+import { CASE_FORM_COPY, FEEDBACK_COPY } from '@/constants/copy'
+import type { CaseCreateBody } from '@/types/case'
+import { showError, showSuccess } from '@/utils/feedback'
+import { reportError } from '@/utils/logger'
+import { validateCaseForm } from '@/utils/validators'
 
-const loading = ref(false);
+const loading = ref(false)
+const fieldErrors = reactive<Partial<Record<keyof CaseCreateBody, string>>>({})
 
-const form = reactive({
-  victimName: "",
-  victimPhone: "",
-  reportDate: "",
-  province: "",
-  city: "",
-  district: "",
-  accidentType: "",
-  injuryType: "",
-  reportNumber: "",
-  insuranceCompany: "",
-});
+const form = reactive<CaseCreateBody>({
+  victimName: '',
+  victimPhone: '',
+  reportDate: '',
+  province: '',
+  city: '',
+  district: '',
+  accidentType: '',
+  injuryType: '',
+  reportNumber: '',
+  insuranceCompany: '',
+})
 
-const accidentTypeOptions = ref<any[]>([]);
-const injuryTypeOptions = ref<any[]>([]);
+const {
+  accidentTypeOptions,
+  injuryTypeOptions,
+  loadDicts,
+  getAccidentTypeLabel,
+  getInjuryTypeLabel,
+} = useCaseDict()
 
-const fetchDicts = async () => {
-  try {
-    const [accRes, injRes] = await Promise.all([
-      request("/dict/data/biz_accident_type", "GET"),
-      request("/dict/data/biz_injury_type", "GET"),
-    ]);
-    accidentTypeOptions.value = accRes || [];
-    injuryTypeOptions.value = injRes || [];
-  } catch (error) {
-    console.error("Fetch dicts error:", error);
-  }
-};
+const regionText = computed(() =>
+  form.province ? `${form.province} ${form.city} ${form.district}` : '',
+)
 
 onLoad(() => {
-  fetchDicts();
-});
+  loadDicts()
+})
 
-const onDateChange = (e: any) => (form.reportDate = e.detail.value);
-const onRegionChange = (e: any) => {
-  const [province, city, district] = e.detail.value;
-  form.province = province;
-  form.city = city;
-  form.district = district;
-};
-const onAccidentChange = (e: any) =>
-  (form.accidentType = accidentTypeOptions.value[e.detail.value].dictValue);
-const onInjuryChange = (e: any) =>
-  (form.injuryType = injuryTypeOptions.value[e.detail.value].dictValue);
+const onDateChange = (e: { detail: { value: string } }) => {
+  form.reportDate = e.detail.value
+  fieldErrors.reportDate = ''
+}
 
-const getDictLabel = (val: string, options: any[]) => {
-  const item = options.find((i) => i.dictValue === val);
-  return item ? item.dictLabel : "";
-};
+const onRegionChange = (e: { detail: { value: string[] } }) => {
+  const [province, city, district] = e.detail.value
+  form.province = province
+  form.city = city
+  form.district = district
+  fieldErrors.province = ''
+}
+
+const onAccidentChange = (e: { detail: { value: number } }) => {
+  form.accidentType = accidentTypeOptions.value[e.detail.value].dictValue
+  fieldErrors.accidentType = ''
+}
+
+const onInjuryChange = (e: { detail: { value: number } }) => {
+  form.injuryType = injuryTypeOptions.value[e.detail.value].dictValue
+  fieldErrors.injuryType = ''
+}
+
+const clearFieldErrors = () => {
+  Object.keys(fieldErrors).forEach((key) => {
+    delete fieldErrors[key as keyof CaseCreateBody]
+  })
+}
 
 const submitForm = async () => {
-  if (
-    !form.victimName ||
-    !form.victimPhone ||
-    !form.reportDate ||
-    !form.province ||
-    !form.city ||
-    !form.district ||
-    !form.accidentType ||
-    !form.injuryType ||
-    !form.reportNumber.trim() ||
-    !form.insuranceCompany.trim()
-  ) {
-    return uni.showToast({ title: "请填写完整的必填项", icon: "none" });
+  clearFieldErrors()
+  const result = validateCaseForm(form)
+  if (!result.valid) {
+    if (result.field) {
+      fieldErrors[result.field] = result.message
+    }
+    showError(result.message || FEEDBACK_COPY.validationRequired)
+    return
   }
 
-  loading.value = true;
+  loading.value = true
   try {
-    await request("/biz/case/patient", "POST", form);
-    uni.showToast({ title: "报案成功！", icon: "success" });
+    await createPatientCase(form)
+    showSuccess(FEEDBACK_COPY.caseCreateSuccess)
     setTimeout(() => {
-      uni.navigateBack();
-      uni.$emit("refreshList");
-    }, 1500);
+      uni.navigateBack()
+      uni.$emit('refreshList')
+    }, 1500)
   } catch (error) {
-    console.error("Submit form error:", error);
+    reportError(error, { scope: 'create_case' })
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 </script>
 
-<style scoped>
-.container {
+<style scoped lang="scss">
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.case-create-page {
+  @include page-background;
   min-height: 100vh;
-  background-color: #ffffff;
-  padding: 60rpx;
 }
 
-.header-section {
-  margin-bottom: 80rpx;
+.case-create-page__body {
+  padding: 0 $space-xl $space-md;
 }
 
-.page-title {
-  display: block;
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 16rpx;
+.case-create-page__spacer {
+  height: 200rpx;
 }
 
-.page-subtitle {
-  display: block;
-  font-size: 28rpx;
-  color: #6b7280;
-}
-
-.form-section {
-  width: 100%;
-}
-
-.input-group {
-  margin-bottom: 60rpx;
-}
-
-.label {
-  display: block;
-  font-size: 28rpx;
-  color: #374151;
-  font-weight: 500;
-  margin-bottom: 20rpx;
-}
-
-.label.required::after {
-  content: " *";
-  color: #dc2626;
-}
-
-.input-field,
 .picker-field {
-  width: 100%;
-  height: 80rpx;
-  font-size: 32rpx;
-  color: #111827;
-  border-bottom: 2rpx solid #e5e7eb;
+  @include input-container;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  transition: all 0.3s;
+  justify-content: space-between;
+  width: 100%;
 }
 
-.input-field:focus {
-  border-bottom-color: #111827;
+.picker-field__value {
+  color: $color-title;
+  font-size: $font-size-body;
 }
 
-.ph-color {
-  color: #9ca3af;
-  font-size: 30rpx;
+.picker-field__placeholder {
+  color: $color-hint;
+  font-size: $font-size-body;
 }
 
-.text-black {
-  color: #111827;
-}
-
-.arrow {
+.picker-field__arrow {
   width: 16rpx;
   height: 16rpx;
-  border-top: 4rpx solid #9ca3af;
-  border-right: 4rpx solid #9ca3af;
+  border-top: 4rpx solid $color-hint;
+  border-right: 4rpx solid $color-hint;
   transform: rotate(45deg);
-}
-
-.submit-btn {
-  margin-top: 80rpx;
-  background-color: #2563eb;
-  color: #ffffff;
-  font-size: 32rpx;
-  font-weight: 500;
-  height: 96rpx;
-  line-height: 96rpx;
-  border-radius: 8rpx;
-  letter-spacing: 2rpx;
-}
-
-.submit-btn::after {
-  border: none;
-}
-
-.submit-btn:active {
-  background-color: #1d4ed8;
+  flex-shrink: 0;
 }
 </style>

@@ -1,0 +1,56 @@
+@use './tokens.scss' as *;
+
+@mixin card-base {
+  background-color: $color-card-bg;
+  border: 2rpx solid $color-border;
+  border-radius: $radius-sm;
+  padding: $space-xl;
+}
+
+@mixin card-hover {
+  &:active {
+    background-color: #f9fafb;
+    border-color: #d1d5db;
+  }
+}
+
+@mixin input-container {
+  width: 100%;
+  min-height: 80rpx;
+  padding: 0 $space-sm;
+  font-size: $font-size-body;
+  color: $color-title;
+  background-color: $color-card-bg;
+  border: 2rpx solid $color-border;
+  border-radius: $radius-sm;
+  box-sizing: border-box;
+}
+
+@mixin primary-button {
+  background-color: $color-primary;
+  color: #ffffff;
+  font-size: 32rpx;
+  font-weight: 500;
+  height: 96rpx;
+  line-height: 96rpx;
+  border-radius: $radius-sm;
+
+  &::after {
+    border: none;
+  }
+
+  &:active {
+    background-color: $color-primary-dark;
+  }
+}
+
+@mixin section-title {
+  font-size: $font-size-card-title;
+  font-weight: 600;
+  color: $color-title;
+}
+
+@mixin page-background {
+  min-height: 100vh;
+  background-color: $color-page-bg;
+}

@@ -1,277 +1,294 @@
 <template>
-  <view class="container">
-    <view class="header-section">
-      <text class="page-title">机构入驻申请</text>
-      <text class="page-subtitle">请填写真实的鉴定机构信息，审核通过后请使用入驻手机号在机构端微信登录</text>
-    </view>
+  <view class="agency-register-page">
+    <PageHeader :title="AGENCY_REGISTER_COPY.title" :subtitle="AGENCY_REGISTER_COPY.subtitle" />
 
-    <view class="form-section">
-      <view class="input-group">
-        <text class="label required">机构名称</text>
-        <input v-model="form.agencyName" class="input-field" placeholder="请输入机构完整名称" maxlength="100" placeholder-class="ph-color" />
-      </view>
+    <view class="agency-register-page__body">
+      <FormSection
+        :title="AGENCY_REGISTER_COPY.basicSection"
+        :description="AGENCY_REGISTER_COPY.basicDesc"
+      >
+        <FormField
+          v-model="form.agencyName"
+          label="机构名称"
+          placeholder="请输入机构完整名称"
+          :maxlength="100"
+          required
+          :error="fieldErrors.agencyName"
+        />
+        <FormField
+          v-model="form.contactPerson"
+          label="联系人"
+          placeholder="请输入联系人姓名"
+          :maxlength="50"
+          required
+          :error="fieldErrors.contactPerson"
+        />
+        <FormField
+          v-model="form.contactPhone"
+          label="联系电话"
+          placeholder="请输入手机号"
+          input-type="number"
+          :maxlength="20"
+          required
+          :error="fieldErrors.contactPhone"
+        />
+      </FormSection>
 
-      <view class="input-group">
-        <text class="label required">联系人</text>
-        <input v-model="form.contactPerson" class="input-field" placeholder="请输入联系人姓名" maxlength="50" placeholder-class="ph-color" />
-      </view>
+      <FormSection
+        :title="AGENCY_REGISTER_COPY.addressSection"
+        :description="AGENCY_REGISTER_COPY.addressDesc"
+      >
+        <FormField label="所在地区" required :error="fieldErrors.province">
+          <picker mode="region" @change="onRegionChange">
+            <view class="picker-field">
+              <text :class="form.province ? 'picker-field__value' : 'picker-field__placeholder'">
+                {{ regionText }}
+              </text>
+              <view class="picker-field__arrow" />
+            </view>
+          </picker>
+        </FormField>
 
-      <view class="input-group">
-        <text class="label required">联系电话</text>
-        <input v-model="form.contactPhone" class="input-field" type="number" placeholder="请输入手机号" maxlength="20" placeholder-class="ph-color" />
-      </view>
-
-      <view class="input-group">
-        <text class="label required">所在地区</text>
-        <picker mode="region" @change="onRegionChange">
-          <view class="picker-field">
-            <text :class="form.province ? 'text-black' : 'ph-color'">
-              {{ form.province ? `${form.province} ${form.city} ${form.district}` : '请选择省/市/区' }}
+        <view class="agency-register-page__address-field">
+          <view class="agency-register-page__address-header">
+            <text class="agency-register-page__address-label">
+              详细地址 <text class="agency-register-page__required">*</text>
             </text>
-            <view class="arrow"></view>
+            <view class="agency-register-page__map-btn" @click="chooseLocation">
+              <text class="agency-register-page__map-icon">📍</text>
+              <text>{{ AGENCY_REGISTER_COPY.mapPick }}</text>
+            </view>
           </view>
-        </picker>
-      </view>
-
-      <view class="input-group">
-        <view class="label-row">
-          <text class="label required" style="margin-bottom: 0;">详细地址</text>
-          <view class="location-btn" @click="chooseLocation">
-            <text class="location-icon">📍</text>
-            <text>地图选择</text>
-          </view>
+          <textarea
+            v-model="form.address"
+            class="agency-register-page__textarea"
+            :class="{ 'agency-register-page__textarea--error': !!fieldErrors.address }"
+            placeholder="请输入详细的办公地址"
+            maxlength="255"
+            placeholder-class="picker-field__placeholder"
+          />
+          <text v-if="fieldErrors.address" class="agency-register-page__error">
+            {{ fieldErrors.address }}
+          </text>
         </view>
-        <textarea v-model="form.address" class="textarea-field" placeholder="请输入详细的办公地址" maxlength="255" placeholder-class="ph-color"></textarea>
-      </view>
-
-      <button class="submit-btn" :loading="loading" @click="submitForm">提交申请</button>
+      </FormSection>
     </view>
+
+    <view class="agency-register-page__spacer" />
+
+    <SubmitBar
+      fixed
+      :text="AGENCY_REGISTER_COPY.submit"
+      :hint="AGENCY_REGISTER_COPY.submitHint"
+      :loading="loading"
+      @submit="submitForm"
+    />
   </view>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { request } from '@/utils/request'
+import { computed, reactive, ref } from 'vue'
+import { registerAgency } from '@/api/agency'
+import PageHeader from '@/components/common/PageHeader.vue'
+import FormField from '@/components/form/FormField.vue'
+import FormSection from '@/components/form/FormSection.vue'
+import SubmitBar from '@/components/form/SubmitBar.vue'
+import { AGENCY_REGISTER_COPY, FEEDBACK_COPY } from '@/constants/copy'
+import type { AgencyRegisterBody } from '@/types/case'
+import { showError } from '@/utils/feedback'
+import { reportError } from '@/utils/logger'
+import { validateAgencyRegisterForm } from '@/utils/validators'
 
 const loading = ref(false)
+const fieldErrors = reactive<Partial<Record<keyof AgencyRegisterBody, string>>>({})
 
-const form = reactive({
+const form = reactive<AgencyRegisterBody>({
   agencyName: '',
   contactPerson: '',
   contactPhone: '',
   province: '',
   city: '',
   district: '',
-  address: ''
+  address: '',
 })
 
-const onRegionChange = (e: any) => {
-  const [province, city, district] = e.detail.value;
-  form.province = province;
-  form.city = city;
-  form.district = district;
+const regionText = computed(() =>
+  form.province ? `${form.province} ${form.city} ${form.district}` : '请选择省/市/区',
+)
+
+const onRegionChange = (e: { detail: { value: string[] } }) => {
+  const [province, city, district] = e.detail.value
+  form.province = province
+  form.city = city
+  form.district = district
+  fieldErrors.province = ''
 }
 
 const chooseLocation = () => {
   uni.chooseLocation({
     success: (res) => {
       if (res.address || res.name) {
-        let fullAddress = res.address || '';
+        let fullAddress = res.address || ''
         if (res.name && !fullAddress.includes(res.name)) {
-          fullAddress += ` ${res.name}`;
+          fullAddress += ` ${res.name}`
         }
-        form.address = fullAddress.trim();
+        form.address = fullAddress.trim()
+        fieldErrors.address = ''
       }
     },
     fail: (err) => {
-      console.log('chooseLocation err:', err)
       const errMsg = err?.errMsg || ''
       if (errMsg.includes('auth deny') || errMsg.includes('authorize')) {
         uni.showModal({
-          title: '需要位置权限',
-          content: '请在设置中允许小程序使用位置信息，以便选择机构地址',
-          confirmText: '去设置',
+          title: AGENCY_REGISTER_COPY.locationAuthTitle,
+          content: AGENCY_REGISTER_COPY.locationAuthContent,
+          confirmText: AGENCY_REGISTER_COPY.locationGoSettings,
           success: (res) => {
             if (res.confirm) uni.openSetting({})
-          }
+          },
         })
       } else if (errMsg.includes('requiredPrivateInfos')) {
-        uni.showToast({ title: '地图功能未配置，请联系管理员', icon: 'none' })
-      } else if (errMsg.includes('cancel')) {
-        // 用户取消选择，无需提示
-      } else {
-        uni.showToast({ title: '无法打开地图，请手动输入地址', icon: 'none' })
+        showError(AGENCY_REGISTER_COPY.locationNotConfigured)
+      } else if (!errMsg.includes('cancel')) {
+        showError(AGENCY_REGISTER_COPY.locationFallback)
       }
-    }
+    },
+  })
+}
+
+const clearFieldErrors = () => {
+  Object.keys(fieldErrors).forEach((key) => {
+    delete fieldErrors[key as keyof AgencyRegisterBody]
   })
 }
 
 const submitForm = async () => {
-  if (!form.agencyName.trim()) return uni.showToast({ title: '请输入机构名称', icon: 'none' })
-  if (!form.contactPerson.trim()) return uni.showToast({ title: '请输入联系人', icon: 'none' })
-  if (!form.contactPhone.trim()) return uni.showToast({ title: '请输入联系电话', icon: 'none' })
-  if (!form.province.trim()) return uni.showToast({ title: '请输入省份', icon: 'none' })
-  if (!form.city.trim()) return uni.showToast({ title: '请输入城市', icon: 'none' })
-  if (!form.district.trim()) return uni.showToast({ title: '请输入区县', icon: 'none' })
-  if (!form.address.trim()) return uni.showToast({ title: '请输入详细地址', icon: 'none' })
+  clearFieldErrors()
+  const result = validateAgencyRegisterForm(form)
+  if (!result.valid) {
+    if (result.field) {
+      fieldErrors[result.field] = result.message
+    }
+    showError(result.message || FEEDBACK_COPY.validationRequired)
+    return
+  }
 
   loading.value = true
   try {
-    const res = await request('/biz/agency/register', 'POST', form)
+    await registerAgency(form)
     uni.showModal({
-      title: '提交成功',
-      content: '您的入驻申请已提交，请耐心等待平台审核。审核通过后，请返回首页点击「我是鉴定机构」并使用入驻手机号微信登录。',
+      title: AGENCY_REGISTER_COPY.submitSuccessTitle,
+      content: AGENCY_REGISTER_COPY.submitSuccessContent,
       showCancel: false,
       confirmColor: '#2563EB',
       success: () => {
         uni.navigateBack()
-      }
+      },
     })
   } catch (error) {
+    reportError(error, { scope: 'agency_register' })
   } finally {
     loading.value = false
   }
 }
 </script>
 
-<style scoped>
-.container {
+<style scoped lang="scss">
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.agency-register-page {
+  @include page-background;
   min-height: 100vh;
-  background-color: #FFFFFF;
-  padding: 60rpx;
 }
 
-.header-section {
-  margin-bottom: 80rpx;
+.agency-register-page__body {
+  padding: 0 $space-xl $space-md;
 }
 
-.page-title {
-  display: block;
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 16rpx;
-}
-
-.page-subtitle {
-  display: block;
-  font-size: 28rpx;
-  color: #6B7280;
-}
-
-.form-section {
-  width: 100%;
-}
-
-.input-group {
-  margin-bottom: 60rpx;
-}
-
-.label {
-  display: block;
-  font-size: 28rpx;
-  color: #374151;
-  font-weight: 500;
-  margin-bottom: 20rpx;
-}
-
-.label.required::after {
-  content: " *";
-  color: #DC2626;
-}
-
-.label-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20rpx;
-}
-
-.location-btn {
-  display: flex;
-  align-items: center;
-  font-size: 26rpx;
-  color: #2563EB;
-  background-color: #EFF6FF;
-  padding: 6rpx 16rpx;
-  border-radius: 20rpx;
-}
-
-.location-icon {
-  margin-right: 6rpx;
-  font-size: 24rpx;
-}
-
-.input-field {
-  width: 100%;
-  height: 80rpx;
-  font-size: 32rpx;
-  color: #111827;
-  border-bottom: 2rpx solid #E5E7EB;
-  transition: all 0.3s;
+.agency-register-page__spacer {
+  height: 200rpx;
 }
 
 .picker-field {
+  @include input-container;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
-  height: 80rpx;
-  font-size: 32rpx;
-  color: #111827;
-  border-bottom: 2rpx solid #E5E7EB;
+}
+
+.picker-field__value {
+  color: $color-title;
+  font-size: $font-size-body;
+}
+
+.picker-field__placeholder {
+  color: $color-hint;
+  font-size: $font-size-body;
+}
+
+.picker-field__arrow {
+  width: 16rpx;
+  height: 16rpx;
+  border-top: 4rpx solid $color-hint;
+  border-right: 4rpx solid $color-hint;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+.agency-register-page__address-field {
+  margin-bottom: 0;
+}
+
+.agency-register-page__address-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  transition: all 0.3s;
+  margin-bottom: $space-sm;
 }
 
-.arrow {
-  width: 16rpx;
-  height: 16rpx;
-  border-top: 4rpx solid #9CA3AF;
-  border-right: 4rpx solid #9CA3AF;
-  transform: rotate(45deg);
-}
-
-.text-black {
-  color: #111827;
-}
-
-.textarea-field {
-  width: 100%;
-  height: 160rpx;
-  font-size: 32rpx;
-  color: #111827;
-  border-bottom: 2rpx solid #E5E7EB;
-  transition: all 0.3s;
-  padding: 20rpx 0;
-  box-sizing: border-box;
-}
-
-.input-field:focus, .textarea-field:focus {
-  border-bottom-color: #111827;
-}
-
-.ph-color {
-  color: #9CA3AF;
-  font-size: 30rpx;
-}
-
-.submit-btn {
-  margin-top: 80rpx;
-  background-color: #2563EB;
-  color: #FFFFFF;
-  font-size: 32rpx;
+.agency-register-page__address-label {
+  font-size: $font-size-body;
+  color: $color-body;
   font-weight: 500;
-  height: 96rpx;
-  line-height: 96rpx;
-  border-radius: 8rpx;
-  letter-spacing: 2rpx;
 }
 
-.submit-btn::after {
-  border: none;
+.agency-register-page__required {
+  color: $color-error;
 }
 
-.submit-btn:active {
-  background-color: #1D4ED8;
+.agency-register-page__map-btn {
+  display: flex;
+  align-items: center;
+  font-size: $font-size-caption;
+  color: $color-primary;
+  background-color: #eff6ff;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+}
+
+.agency-register-page__map-icon {
+  margin-right: 6rpx;
+}
+
+.agency-register-page__textarea {
+  @include input-container;
+  width: 100%;
+  min-height: 160rpx;
+  padding: $space-md $space-sm;
+  line-height: 1.6;
+  box-sizing: border-box;
+
+  &--error {
+    border-color: $color-error;
+  }
+}
+
+.agency-register-page__error {
+  display: block;
+  margin-top: $space-xs;
+  font-size: $font-size-caption;
+  color: $color-error;
 }
 </style>

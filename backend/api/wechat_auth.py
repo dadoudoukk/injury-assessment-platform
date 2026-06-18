@@ -21,9 +21,10 @@ async def resolve_wechat_phone(code: str, fallback_phone: Optional[str] = None) 
     secret = settings.wechat_secret
 
     if not appid or not secret:
-        phone = (fallback_phone or "").strip()
+        dev_phone = (settings.wechat_dev_fallback_phone or "").strip()
+        phone = (fallback_phone or dev_phone).strip()
         if not phone:
-            return None, "后台未配置微信密钥，且未提供模拟手机号"
+            return None, "后台未配置微信密钥，且未配置开发环境模拟手机号（WECHAT_DEV_FALLBACK_PHONE）"
         return phone, None
 
     try:

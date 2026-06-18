@@ -1,200 +1,309 @@
 <template>
-  <view class="mine-container">
-    <view class="header-section"></view>
+  <view class="mine-page">
+    <PageHeader :title="MINE_COPY.title" compact :show-brand-line="false" />
 
-    <view class="content-card">
-      <!-- 伤者：仅展示脱敏手机号 -->
-      <view v-if="!isAgency" class="patient-view">
-        <text class="phone-number">{{ maskedPhone || "未绑定手机号" }}</text>
+    <view class="mine-page__identity">
+      <view class="mine-page__avatar">
+        <text class="mine-page__avatar-text">{{ avatarText }}</text>
       </view>
+      <text class="mine-page__name">{{ displayName }}</text>
+      <view class="mine-page__role-tag">
+        <text class="mine-page__role-text">{{ roleLabel }}</text>
+      </view>
+    </view>
 
-      <!-- 机构：展示机构信息 -->
-      <view v-else class="agency-view">
-        <text class="agency-title">{{ userInfo?.agencyName || "未知鉴定机构" }}</text>
-        <view class="info-list">
-          <view class="info-row">
-            <text class="info-label">联系人</text>
-            <text class="info-value">{{ userInfo?.contactPerson || "暂无" }}</text>
+    <view class="mine-page__sections">
+      <FormSection
+        v-if="isAgency"
+        :title="MINE_COPY.agencySection"
+        :description="MINE_COPY.agencySectionDesc"
+      >
+        <view class="mine-page__info-list">
+          <view class="mine-page__info-row">
+            <text class="mine-page__label">{{ MINE_COPY.contactPerson }}</text>
+            <text class="mine-page__value">{{ userInfo?.contactPerson || MINE_COPY.emptyValue }}</text>
           </view>
-          <view class="info-row">
-            <text class="info-label">联系电话</text>
-            <text class="info-value">{{ userInfo?.contactPhone || "暂无" }}</text>
+          <view class="mine-page__info-row">
+            <text class="mine-page__label">{{ MINE_COPY.contactPhone }}</text>
+            <text class="mine-page__value">{{ userInfo?.contactPhone || MINE_COPY.emptyValue }}</text>
           </view>
-          <view class="info-row">
-            <text class="info-label">省市区</text>
-            <text class="info-value">{{ regionText || "暂无" }}</text>
+          <view class="mine-page__info-row">
+            <text class="mine-page__label">{{ MINE_COPY.region }}</text>
+            <text class="mine-page__value">{{ regionText || MINE_COPY.emptyValue }}</text>
           </view>
-          <view class="info-row">
-            <text class="info-label">详细地址</text>
-            <text class="info-value address-text">{{ userInfo?.address || "暂无" }}</text>
+          <view class="mine-page__info-row mine-page__info-row--col">
+            <text class="mine-page__label">{{ MINE_COPY.address }}</text>
+            <text class="mine-page__value">{{ userInfo?.address || MINE_COPY.emptyValue }}</text>
           </view>
         </view>
+      </FormSection>
+
+      <FormSection v-else :title="MINE_COPY.accountSection">
+        <view class="mine-page__info-list">
+          <view class="mine-page__info-row">
+            <text class="mine-page__label">{{ MINE_COPY.phoneLabel }}</text>
+            <text class="mine-page__value mine-page__value--emphasis">
+              {{ maskedPhone || MINE_COPY.phoneEmpty }}
+            </text>
+          </view>
+        </view>
+      </FormSection>
+
+      <view
+        v-if="isAgency && !mustChangePassword"
+        class="mine-page__menu"
+        hover-class="mine-page__menu--hover"
+        @click="goChangePassword"
+      >
+        <text class="mine-page__menu-text">{{ MINE_COPY.changePassword }}</text>
+        <view class="mine-page__menu-arrow" />
       </view>
     </view>
 
-    <view v-if="isAgency && !mustChangePassword" class="action-btn" @click="goChangePassword">
-      修改密码
+    <view class="mine-page__logout-wrap" :class="{ 'mine-page__logout-wrap--with-nav': isAgency }">
+      <button class="mine-page__logout-btn" @click="handleLogout">{{ MINE_COPY.logout }}</button>
     </view>
 
-    <view class="logout-btn" @click="handleLogout">退出登录</view>
+    <BottomNav v-if="isAgency" :items="navItems" @select="onNavSelect" />
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { onShow } from "@dcloudio/uni-app";
-import { useUserStore } from "@/store/modules/user";
-import { isAgencyUser } from "@/utils/role";
-import { ensureAgencySession } from "@/utils/agency-auth";
+import { computed } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import PageHeader from '@/components/common/PageHeader.vue'
+import FormSection from '@/components/form/FormSection.vue'
+import BottomNav from '@/components/navigation/BottomNav.vue'
+import { MINE_COPY } from '@/constants/copy'
+import { ROUTES } from '@/constants/routes'
+import { fetchAndSetUserInfo } from '@/services/user-session'
+import { ensureAgencySession } from '@/utils/agency-auth'
+import { formatRegion, maskPhone } from '@/utils/format'
+import { isAgencyUser } from '@/utils/role'
+import { showConfirm } from '@/utils/feedback'
+import { trackPageView } from '@/utils/logger'
+import { useUserStore } from '@/store/modules/user'
 
-const userStore = useUserStore();
+const userStore = useUserStore()
 
-const userInfo = computed(() => userStore.userInfo);
-const isAgency = computed(() => isAgencyUser(userInfo.value));
-const mustChangePassword = computed(() => userInfo.value?.mustChangePassword === true);
+const userInfo = computed(() => userStore.userInfo)
+const isAgency = computed(() => isAgencyUser(userInfo.value))
+const mustChangePassword = computed(() => userInfo.value?.mustChangePassword === true)
+
+const displayName = computed(() => {
+  if (isAgency.value) {
+    return userInfo.value?.agencyName || MINE_COPY.emptyValue
+  }
+  return maskedPhone.value || MINE_COPY.phoneEmpty
+})
+
+const roleLabel = computed(() =>
+  isAgency.value ? MINE_COPY.agencyRole : MINE_COPY.patientRole,
+)
+
+const avatarText = computed(() => {
+  const name = displayName.value
+  if (!name || name === MINE_COPY.phoneEmpty || name === MINE_COPY.emptyValue) return '用'
+  return name.slice(0, 1)
+})
 
 const maskedPhone = computed(() => {
-  const phone = userInfo.value?.phone || "";
-  if (!phone) return "";
-  return phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2");
-});
+  const phone = userInfo.value?.phone || ''
+  return phone ? maskPhone(phone) : ''
+})
 
-const regionText = computed(() => {
-  const info = userInfo.value;
-  if (!info) return "";
-  const parts = [info.province, info.city, info.district].filter(Boolean);
-  return parts.join("");
-});
+const regionText = computed(() =>
+  formatRegion(userInfo.value?.province, userInfo.value?.city, userInfo.value?.district),
+)
+
+const navItems = computed(() => [
+  { key: 'workbench', label: '工作台' },
+  { key: 'mine', label: '个人中心', active: true },
+])
 
 onShow(async () => {
+  trackPageView('mine/index')
   if (!userStore.token) {
-    uni.reLaunch({ url: "/pages/patient/home" });
-    return;
+    uni.reLaunch({ url: ROUTES.PATIENT_HOME })
+    return
   }
-  await userStore.fetchUserInfo();
+  await fetchAndSetUserInfo()
   if (isAgency.value) {
-    await ensureAgencySession(false);
+    await ensureAgencySession(false)
   }
-});
+})
 
 const goChangePassword = () => {
-  uni.navigateTo({ url: "/pages/login/change-password" });
-};
+  uni.navigateTo({ url: ROUTES.CHANGE_PASSWORD })
+}
 
-const handleLogout = () => {
-  uni.showModal({
-    title: "提示",
-    content: "确定要退出登录吗？",
-    confirmColor: "#2563EB",
-    success: (res) => {
-      if (res.confirm) {
-        userStore.logout();
-        uni.reLaunch({ url: "/pages/patient/home" });
-      }
-    },
-  });
-};
+const onNavSelect = (key: string) => {
+  if (key === 'workbench') {
+    uni.navigateTo({ url: ROUTES.WORKBENCH })
+  }
+}
+
+const handleLogout = async () => {
+  const confirmed = await showConfirm({ content: MINE_COPY.logoutConfirm })
+  if (confirmed) {
+    userStore.logout()
+    uni.reLaunch({ url: ROUTES.PATIENT_HOME })
+  }
+}
 </script>
 
 <style scoped lang="scss">
-.mine-container {
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.mine-page {
+  @include page-background;
   min-height: 100vh;
-  background-color: #f5f7fa;
-  padding-bottom: 40rpx;
+  padding-bottom: calc(110rpx + env(safe-area-inset-bottom));
 }
 
-.header-section {
-  height: 280rpx;
-  background: linear-gradient(135deg, #2b85e4 0%, #5cadff 100%);
-  border-radius: 0 0 40rpx 40rpx;
-}
-
-.content-card {
-  margin: -80rpx 30rpx 0;
-  background-color: #ffffff;
-  border-radius: 16rpx;
-  padding: 48rpx 36rpx;
-  box-shadow: 0 8rpx 20rpx rgba(0, 0, 0, 0.05);
-  position: relative;
-  z-index: 2;
-}
-
-.patient-view {
+.mine-page__identity {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
-  min-height: 120rpx;
+  padding: $space-xl $space-3xl $space-2xl;
+  margin: 0 $space-xl $space-lg;
+  background-color: $color-card-bg;
+  border: 2rpx solid $color-border;
+  border-radius: $radius-md;
 }
 
-.phone-number {
+.mine-page__avatar {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, $color-primary 0%, #5cadff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $space-md;
+}
+
+.mine-page__avatar-text {
   font-size: 48rpx;
   font-weight: 600;
-  color: #111827;
-  letter-spacing: 2rpx;
+  color: #ffffff;
 }
 
-.agency-view {
-  display: flex;
-  flex-direction: column;
-}
-
-.agency-title {
-  font-size: 36rpx;
+.mine-page__name {
+  font-size: $font-size-card-title;
   font-weight: 600;
-  color: #111827;
+  color: $color-title;
+  text-align: center;
   line-height: 1.4;
-  margin-bottom: 36rpx;
-  padding-bottom: 28rpx;
-  border-bottom: 2rpx solid #f0f0f0;
+  margin-bottom: $space-sm;
 }
 
-.info-list {
+.mine-page__role-tag {
+  padding: 4rpx 20rpx;
+  background-color: rgba(37, 99, 235, 0.08);
+  border-radius: 999rpx;
+}
+
+.mine-page__role-text {
+  font-size: $font-size-caption;
+  color: $color-primary;
+  font-weight: 500;
+}
+
+.mine-page__sections {
+  padding: 0 $space-xl;
+}
+
+.mine-page__info-list {
   display: flex;
   flex-direction: column;
-  gap: 28rpx;
+  gap: $space-md;
 }
 
-.info-row {
+.mine-page__info-row {
   display: flex;
   align-items: flex-start;
-  font-size: 28rpx;
+  font-size: $font-size-body;
   line-height: 1.5;
+
+  &--col {
+    flex-direction: column;
+    gap: $space-xs;
+  }
 }
 
-.info-label {
-  width: 140rpx;
+.mine-page__label {
+  width: 160rpx;
   flex-shrink: 0;
-  color: #6b7280;
+  color: $color-secondary;
 }
 
-.info-value {
+.mine-page__value {
   flex: 1;
-  color: #111827;
-}
-
-.address-text {
+  color: $color-title;
   word-break: break-all;
+
+  &--emphasis {
+    font-size: 36rpx;
+    font-weight: 600;
+    letter-spacing: 1rpx;
+  }
 }
 
-.action-btn {
-  margin: 40rpx 30rpx 0;
-  background-color: #ffffff;
-  color: #2563eb;
-  font-size: 32rpx;
-  text-align: center;
-  padding: 28rpx 0;
-  border-radius: 16rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
+.mine-page__menu {
+  @include card-base;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: $space-lg;
+  padding: $space-lg $space-xl;
 }
 
-.logout-btn {
-  margin: 24rpx 30rpx 0;
-  background-color: #ffffff;
+.mine-page__menu--hover {
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.mine-page__menu-text {
+  font-size: $font-size-body;
+  color: $color-primary;
+  font-weight: 500;
+}
+
+.mine-page__menu-arrow {
+  width: 16rpx;
+  height: 16rpx;
+  border-top: 4rpx solid $color-hint;
+  border-right: 4rpx solid $color-hint;
+  transform: rotate(45deg);
+}
+
+.mine-page__logout-wrap {
+  padding: $space-2xl $space-xl $space-xl;
+
+  &--with-nav {
+    padding-bottom: $space-md;
+  }
+}
+
+.mine-page__logout-btn {
+  width: 100%;
+  height: 96rpx;
+  line-height: 96rpx;
+  background-color: $color-card-bg;
   color: #ef4444;
   font-size: 32rpx;
-  text-align: center;
-  padding: 28rpx 0;
-  border-radius: 16rpx;
-  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
+  font-weight: 500;
+  border: 2rpx solid #fecaca;
+  border-radius: $radius-sm;
+
+  &::after {
+    border: none;
+  }
+
+  &:active {
+    background-color: #fef2f2;
+  }
 }
 </style>

@@ -1,283 +1,380 @@
 <template>
-  <view class="container">
-    <view class="header-section">
-      <view class="brand-line"></view>
-      <text class="title">人伤鉴定共享中心</text>
-      <text class="subtitle">让鉴定更透明 · 让理赔更高效</text>
-    </view>
+  <view class="portal-page">
+    <PageHeader
+      :title="APP_COPY.brandTitle"
+      :subtitle="APP_COPY.brandSubtitle"
+    />
 
-    <view v-if="!sessionReady" class="session-loading">
-      <text class="session-loading-text">加载中...</text>
-    </view>
+    <LoadingState v-if="wxLoggingIn" fullscreen text="登录中..." />
+    <LoadingState v-else-if="!sessionReady" fullscreen />
 
-    <view class="action-grid" v-else>
-      <!-- 已登录机构用户显示快捷入口 -->
-      <view class="action-card patient-card" v-if="showAgencyHub" @click="goToWorkbench">
-        <view class="card-content">
-          <text class="card-title">我的工作台</text>
-          <text class="card-desc">接单处理 / 查看卷宗</text>
-        </view>
-        <view class="arrow"></view>
+    <template v-else>
+      <view v-if="showAgencyHub" class="portal-page__welcome">
+        <text class="portal-page__welcome-text">
+          {{ PORTAL_COPY.agencyWelcome }}，{{ welcomeName }}
+        </text>
       </view>
 
-      <view class="action-card agency-card" v-if="showAgencyHub" @click="goToMine">
-        <view class="card-content">
-          <text class="card-title">个人中心</text>
-          <text class="card-desc">账号信息 / 退出登录</text>
+      <view class="portal-page__entries">
+        <view
+          v-if="showAgencyHub"
+          class="entry-card entry-card--agency"
+          hover-class="entry-card--hover"
+          @click="goToWorkbench"
+        >
+          <text class="entry-card__icon">📋</text>
+          <view class="entry-card__content">
+            <text class="entry-card__title">{{ PORTAL_COPY.workbenchTitle }}</text>
+            <text class="entry-card__desc">{{ PORTAL_COPY.workbenchDesc }}</text>
+          </view>
+          <view class="entry-card__arrow" />
         </view>
-        <view class="arrow"></view>
+
+        <view
+          v-if="showAgencyHub"
+          class="entry-card entry-card--muted"
+          hover-class="entry-card--hover"
+          @click="goToMine"
+        >
+          <text class="entry-card__icon">👤</text>
+          <view class="entry-card__content">
+            <text class="entry-card__title">{{ PORTAL_COPY.mineTitle }}</text>
+            <text class="entry-card__desc">{{ PORTAL_COPY.mineDesc }}</text>
+          </view>
+          <view class="entry-card__arrow" />
+        </view>
+
+        <button
+          v-if="!userStore.token"
+          class="entry-card entry-card--patient"
+          open-type="getPhoneNumber"
+          @getphonenumber="onGetPhoneNumber"
+        >
+          <text class="entry-card__icon">🩹</text>
+          <view class="entry-card__content">
+            <text class="entry-card__title">{{ PORTAL_COPY.patientEntryTitle }}</text>
+            <text class="entry-card__desc">{{ PORTAL_COPY.patientEntryDesc }}</text>
+          </view>
+          <view class="entry-card__arrow" />
+        </button>
+
+        <view
+          v-if="!userStore.token"
+          class="entry-card entry-card--agency"
+          hover-class="entry-card--hover"
+          @click="goToAgencyLogin"
+        >
+          <text class="entry-card__icon">🏥</text>
+          <view class="entry-card__content">
+            <text class="entry-card__title">{{ PORTAL_COPY.agencyEntryTitle }}</text>
+            <text class="entry-card__desc">{{ PORTAL_COPY.agencyEntryDesc }}</text>
+          </view>
+          <view class="entry-card__arrow" />
+        </view>
+
+        <view v-if="!userStore.token" class="portal-page__register" @click="goToRegister">
+          <text class="portal-page__register-hint">{{ PORTAL_COPY.registerHint }}</text>
+          <text class="portal-page__register-link">{{ PORTAL_COPY.registerLink }}</text>
+        </view>
       </view>
 
-      <!-- 未登录状态显示入口 -->
-      <button 
-        v-if="!userStore.token"
-        class="action-card patient-card" 
-        open-type="getPhoneNumber" 
-        @getphonenumber="onGetPhoneNumber"
-      >
-        <view class="card-content">
-          <text class="card-title">我是伤者</text>
-          <text class="card-desc">我要报案鉴定 / 查进度</text>
+      <view v-if="!userStore.token" class="portal-page__flow">
+        <text class="portal-page__flow-title">{{ PORTAL_COPY.serviceFlowTitle }}</text>
+        <view class="portal-page__flow-steps">
+          <view
+            v-for="(step, index) in PORTAL_COPY.steps"
+            :key="step"
+            class="portal-page__flow-step"
+          >
+            <view class="portal-page__flow-dot">{{ index + 1 }}</view>
+            <text class="portal-page__flow-label">{{ step }}</text>
+            <view
+              v-if="index < PORTAL_COPY.steps.length - 1"
+              class="portal-page__flow-line"
+            />
+          </view>
         </view>
-        <view class="arrow"></view>
-      </button>
-
-      <view v-if="!userStore.token" class="action-card agency-card" @click="goToAgencyLogin">
-        <view class="card-content">
-          <text class="card-title">我是鉴定机构</text>
-          <text class="card-desc">登录工作台接单处理</text>
-        </view>
-        <view class="arrow"></view>
       </view>
-      
-      <view v-if="!userStore.token" class="register-link" @click="goToRegister">
-        <text class="text-gray">还没有机构账号？</text>
-        <text class="link-text">点击申请入驻</text>
-      </view>
-    </view>
+    </template>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { request } from '@/utils/request'
-import { isAgencyUser } from '@/utils/role'
+import { wxLoginPatient } from '@/api/auth'
+import PageHeader from '@/components/common/PageHeader.vue'
+import LoadingState from '@/components/common/LoadingState.vue'
+import { APP_COPY, FEEDBACK_COPY, PORTAL_COPY } from '@/constants/copy'
+import { ROUTES } from '@/constants/routes'
+import { fetchAndSetUserInfo } from '@/services/user-session'
 import { ensureAgencySession } from '@/utils/agency-auth'
+import { isAgencyUser } from '@/utils/role'
+import { showError, showSuccess } from '@/utils/feedback'
+import { reportError, trackPageView } from '@/utils/logger'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
 const sessionReady = ref(!userStore.token)
+/** 微信授权登录进行中，避免 onShow 与登录流程冲突 */
+const wxLoggingIn = ref(false)
+/** 已触发患者端跳转，避免重复 reLaunch */
+const redirectingToList = ref(false)
 
 const showAgencyHub = computed(
   () => userStore.token && isAgencyUser(userStore.userInfo),
 )
 
-/** 伤者已登录时直接进入案件列表，不展示服务大厅中间页 */
+const welcomeName = computed(
+  () => userStore.userInfo?.nickname || userStore.userInfo?.username || '机构用户',
+)
+
+function goToPatientList() {
+  if (redirectingToList.value) return
+  redirectingToList.value = true
+  uni.reLaunch({ url: ROUTES.PATIENT_LIST })
+}
+
 const redirectPatientIfLoggedIn = async () => {
+  if (wxLoggingIn.value || redirectingToList.value) return
+
   if (!userStore.token) {
     sessionReady.value = true
     return
   }
-  sessionReady.value = false
-  await userStore.fetchUserInfo()
+
+  await fetchAndSetUserInfo()
   if (isAgencyUser(userStore.userInfo)) {
     sessionReady.value = true
     await ensureAgencySession(false)
     return
   }
-  uni.reLaunch({ url: '/pages/patient/list' })
+
+  goToPatientList()
 }
 
 onShow(() => {
+  trackPageView('patient/home')
   redirectPatientIfLoggedIn()
 })
 
-// 点击跳转机构端登录
 const goToAgencyLogin = () => {
-  uni.navigateTo({
-    url: '/pages/login/index'
-  })
+  uni.navigateTo({ url: ROUTES.AGENCY_LOGIN })
 }
 
 const goToRegister = () => {
-  uni.navigateTo({ url: '/pages/agency/register' })
+  uni.navigateTo({ url: ROUTES.AGENCY_REGISTER })
 }
 
 const goToMine = () => {
-  uni.navigateTo({ url: '/pages/mine/index' })
+  uni.navigateTo({ url: ROUTES.MINE })
 }
 
 const goToWorkbench = () => {
-  uni.navigateTo({ url: '/pages/index/index' })
+  uni.navigateTo({ url: ROUTES.WORKBENCH })
 }
 
-// 伤者端：获取手机号授权
-const onGetPhoneNumber = async (e: any) => {
+const onGetPhoneNumber = async (e: { detail: { errMsg: string; code?: string } }) => {
   if (e.detail.errMsg !== 'getPhoneNumber:ok') {
-    uni.showToast({ title: '需要授权手机号才能使用', icon: 'none' })
+    showError(PORTAL_COPY.phoneAuthRequired)
     return
   }
-  
-  uni.showLoading({ title: '登录中...' })
+  if (wxLoggingIn.value) return
+
+  wxLoggingIn.value = true
   try {
-    // 清除过期 token，避免登录请求携带无效凭证
-    userStore.logout()
-    // 真实项目中，后端拿着 e.detail.code 去微信服务器换取真实的手机号
-    const res = await request('/login/wx', 'POST', {
-      code: e.detail.code,
-      phone: '13800000000' // 临时降级参数：如果你的后端还没有配置微信 AppID，后端会默认取这个号码
-    })
-    
-    if (res && res.access_token) {
+    userStore.clearSession()
+    const res = await wxLoginPatient({ code: e.detail.code! })
+
+    if (res?.access_token) {
       userStore.setToken(res.access_token)
-      await userStore.fetchUserInfo()
+      userStore.setLastUserType('patient')
+      await fetchAndSetUserInfo()
       if (isAgencyUser(userStore.userInfo)) {
-        uni.showToast({ title: '该手机号为机构账号，请使用机构入口登录', icon: 'none' })
+        showError(PORTAL_COPY.agencyAccountHint)
         userStore.logout()
         return
       }
-      uni.showToast({ title: '登录成功', icon: 'success' })
-      setTimeout(() => {
-        uni.reLaunch({ url: '/pages/patient/list' })
-      }, 500)
+      showSuccess(FEEDBACK_COPY.loginSuccess)
+      goToPatientList()
     }
   } catch (error) {
-    console.error('Wx login error:', error)
+    reportError(error, { scope: 'wx_patient_login' })
   } finally {
-    uni.hideLoading()
+    wxLoggingIn.value = false
   }
 }
 </script>
 
-<style scoped>
-.container {
-  min-height: 100vh;
-  background-color: #FFFFFF;
+<style scoped lang="scss">
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.portal-page {
+  @include page-background;
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
 }
 
-.header-section {
-  padding: 120rpx 60rpx 80rpx;
-  background-color: #FFFFFF;
-  position: relative;
+.portal-page__welcome {
+  padding: 0 $space-3xl $space-md;
 }
 
-.brand-line {
-  width: 60rpx;
-  height: 8rpx;
-  background-color: #2563EB;
-  margin-bottom: 30rpx;
+.portal-page__welcome-text {
+  font-size: $font-size-body;
+  color: $color-secondary;
 }
 
-.title {
-  display: block;
-  font-size: 56rpx;
-  font-weight: 600;
-  color: #111827;
-  letter-spacing: 2rpx;
-  margin-bottom: 20rpx;
-}
-
-.subtitle {
-  display: block;
-  font-size: 28rpx;
-  color: #6B7280;
-  letter-spacing: 2rpx;
-}
-
-.action-grid {
-  padding: 0 60rpx;
+.portal-page__entries {
+  padding: 0 $space-3xl;
   flex: 1;
 }
 
-.action-card {
-  background-color: #FFFFFF;
-  border: 2rpx solid #E5E7EB;
-  border-radius: 8rpx;
-  padding: 40rpx 40rpx;
+.entry-card {
+  @include card-base;
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 40rpx;
-  box-shadow: none;
+  margin-bottom: $space-xl;
+  padding: $space-xl;
   line-height: normal;
   text-align: left;
-  transition: all 0.3s;
+  transition: border-color 0.2s, background-color 0.2s;
+
+  &::after {
+    border: none;
+  }
 }
 
-.action-card::after {
-  border: none;
+.entry-card--hover {
+  background-color: #f9fafb;
+  border-color: #d1d5db;
 }
 
-.action-card:active {
-  background-color: #F9FAFB;
-  border-color: #D1D5DB;
+.entry-card--patient {
+  border-left: 8rpx solid $color-primary;
 }
 
-.patient-card {
-  border-left: 8rpx solid #2563EB;
+.entry-card--agency {
+  border-left: 8rpx solid #4b5563;
 }
 
-.agency-card {
-  border-left: 8rpx solid #4B5563;
+.entry-card--muted {
+  border-left: 8rpx solid $color-hint;
 }
 
-.card-content {
+.entry-card__icon {
+  font-size: 48rpx;
+  margin-right: $space-lg;
+  flex-shrink: 0;
+}
+
+.entry-card__content {
+  flex: 1;
   display: flex;
   flex-direction: column;
 }
 
-.card-title {
-  font-size: 36rpx;
+.entry-card__title {
+  font-size: $font-size-card-title;
   font-weight: 600;
-  color: #111827;
-  margin-bottom: 12rpx;
+  color: $color-title;
+  margin-bottom: $space-xs;
 }
 
-.card-desc {
-  font-size: 26rpx;
-  color: #6B7280;
+.entry-card__desc {
+  font-size: $font-size-caption;
+  color: $color-secondary;
+  line-height: 1.5;
 }
 
-.arrow {
+.entry-card__arrow {
   width: 16rpx;
   height: 16rpx;
-  border-top: 4rpx solid #9CA3AF;
-  border-right: 4rpx solid #9CA3AF;
+  border-top: 4rpx solid $color-hint;
+  border-right: 4rpx solid $color-hint;
   transform: rotate(45deg);
+  flex-shrink: 0;
+  margin-left: $space-sm;
 }
 
-.register-link {
+.portal-page__register {
   text-align: center;
-  margin-top: 60rpx;
-  padding: 30rpx 0;
+  margin-top: $space-2xl;
+  padding: $space-lg 0;
 }
 
-.text-gray {
-  font-size: 28rpx;
-  color: #6B7280;
+.portal-page__register-hint {
+  font-size: $font-size-body;
+  color: $color-secondary;
 }
 
-.link-text {
-  font-size: 28rpx;
-  color: #2563EB;
+.portal-page__register-link {
+  font-size: $font-size-body;
+  color: $color-primary;
   font-weight: 500;
-  margin-left: 10rpx;
+  margin-left: $space-xs;
 }
 
-.session-loading {
+.portal-page__flow {
+  margin: $space-2xl $space-3xl $space-3xl;
+  padding: $space-xl;
+  background-color: $color-card-bg;
+  border: 2rpx solid $color-border;
+  border-radius: $radius-md;
+}
+
+.portal-page__flow-title {
+  display: block;
+  font-size: $font-size-body;
+  font-weight: 600;
+  color: $color-title;
+  margin-bottom: $space-lg;
+}
+
+.portal-page__flow-steps {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.portal-page__flow-step {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.portal-page__flow-dot {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background-color: $color-primary;
+  color: #ffffff;
+  font-size: $font-size-caption;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 120rpx 60rpx;
+  margin-bottom: $space-sm;
+  z-index: 1;
 }
 
-.session-loading-text {
-  font-size: 28rpx;
-  color: #9CA3AF;
+.portal-page__flow-label {
+  font-size: $font-size-caption;
+  color: $color-secondary;
+  text-align: center;
+}
+
+.portal-page__flow-line {
+  position: absolute;
+  top: 24rpx;
+  left: 50%;
+  width: 100%;
+  height: 2rpx;
+  background-color: $color-border;
+  z-index: 0;
 }
 </style>

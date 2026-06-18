@@ -1,498 +1,241 @@
 <template>
-  <view class="container">
-    <!-- 顶部状态切换 Tabs -->
-    <scroll-view class="tabs-scroll" scroll-x :show-scrollbar="false">
-      <view class="tabs">
-        <view
-          v-for="(tab, index) in tabs"
-          :key="index"
-          :class="['tab-item', currentTab === index ? 'active' : '']"
-          @click="switchTab(index)"
-        >
-          <text class="tab-text">{{ tab.name }}</text>
-          <view v-if="currentTab === index" class="tab-line"></view>
-        </view>
-      </view>
-    </scroll-view>
+  <view class="workbench-page">
+    <CaseStatBar
+      :items="statItems"
+      :active-key="activeStatKey"
+      @select="onStatSelect"
+    />
 
-    <!-- 列表区域 -->
-    <view class="list-container">
-      <view v-if="caseList.length === 0 && !loading" class="empty-state">
-        <text class="empty-text">暂无相关案件卷宗</text>
-      </view>
+    <CaseFilterTabs
+      :tabs="filterTabs"
+      :current-index="currentTab"
+      @change="switchTab"
+    />
 
-      <view 
-        class="case-card" 
-        v-for="item in caseList" 
-        :key="item.id"
-        @click="goToDetail(item.id)"
-      >
-        <view class="card-header">
-          <text class="report-no">{{ item.reportNumber }}</text>
-          <text :class="['status-text', 'status-' + item.status]">
-            {{ getStatusText(item.status) }}
-          </text>
-        </view>
-        
-        <view class="card-body">
-          <view class="info-row" v-if="normalizeStatus(item.status) === 5 && item.reworkRemark">
-            <text class="info-label text-red">打回原因</text>
-            <text class="info-value text-red font-bold">{{ item.reworkRemark }}</text>
-          </view>
-          
-          <view class="info-row">
-            <text class="info-label">伤者姓名</text>
-            <text class="info-value font-bold">{{ item.victimName }}</text>
-          </view>
-          
-          <view class="info-row" @click.stop="normalizeStatus(item.status) !== 1 && callPhone(item.victimPhone)">
-            <text class="info-label">联系电话</text>
-            <text :class="['info-value', normalizeStatus(item.status) !== 1 ? 'text-blue' : '']">{{ item.victimPhone }}</text>
-          </view>
+    <view class="workbench-page__body">
+      <LoadingState v-if="!initialized" fullscreen />
 
-          <view class="info-row">
-            <text class="info-label">出险地点</text>
-            <text class="info-value">{{ item.province }}{{ item.city }}{{ item.district }}</text>
-          </view>
+      <EmptyState
+        v-else-if="initialError"
+        variant="error"
+        :action-text="FEEDBACK_COPY.retry"
+        @action="refresh"
+      />
 
-          <view class="info-row">
-            <text class="info-label">事故类型</text>
-            <text class="info-value">{{ getDictLabel(item.accidentType, 'biz_accident_type') }}</text>
-          </view>
+      <EmptyState
+        v-else-if="caseList.length === 0 && !loading"
+        variant="search"
+      />
 
-          <view class="info-row">
-            <text class="info-label">保险公司</text>
-            <text class="info-value">{{ item.insuranceCompany }}</text>
-          </view>
-        </view>
-        
-        <view class="card-footer">
-          <text class="date-text">{{ item.reportDate }}</text>
-          <view class="actions">
-            <button
-              class="action-btn primary"
-              v-if="normalizeStatus(item.status) === 1"
-              :loading="acceptingId === item.id"
-              @click.stop="handleAccept(item)"
-            >
-              确认受理
-            </button>
-            <button
-              class="action-btn primary"
-              v-else-if="normalizeStatus(item.status) === 2 || normalizeStatus(item.status) === 5"
-              @click.stop="goToDetail(item.id)"
-            >
-              去鉴定
-            </button>
-            <button class="action-btn" v-else @click.stop="goToDetail(item.id)">查看卷宗</button>
-          </view>
-        </view>
-      </view>
+      <template v-else>
+        <CaseCard
+          v-for="item in caseList"
+          :key="item.id"
+          :item="item"
+          mode="agency"
+          :accident-type-label="getAccidentTypeLabel(item.accidentType)"
+          :accept-loading="acceptingId === item.id"
+          @click="goToDetail(item.id)"
+          @accept="handleAccept(item)"
+          @appraise="goToDetail(item.id)"
+          @view="goToDetail(item.id)"
+        />
 
-      <view class="loading-more" v-if="caseList.length > 0">
-        <text>{{ loading ? '加载中...' : (hasMore ? '上拉加载更多' : '没有更多数据了') }}</text>
-      </view>
+        <LoadMoreFooter
+          :loading="loading"
+          :has-more="hasMore"
+          :error="loadMoreError"
+          :no-more-text="LIST_COPY.noMoreAgency"
+          @retry="retryLoadMore"
+        />
+      </template>
     </view>
-    
-    <!-- 底部导航栏 -->
-    <view class="bottom-action-bar">
-      <view class="nav-item active">
-        <text class="nav-text">工作台</text>
-      </view>
-      <view class="nav-item" @click="goToMine">
-        <text class="nav-text">个人中心</text>
-      </view>
-    </view>
+
+    <BottomNav :items="navItems" @select="onNavSelect" />
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app'
-import { request } from '@/utils/request'
-import { normalizeCaseStatus } from '@/utils/role'
+import { acceptCase, fetchCaseList, fetchCaseStatsSummary } from '@/api/case'
+import CaseCard from '@/components/case/CaseCard.vue'
+import CaseFilterTabs from '@/components/case/CaseFilterTabs.vue'
+import type { CaseFilterTab } from '@/components/case/CaseFilterTabs.vue'
+import CaseStatBar from '@/components/case/CaseStatBar.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import LoadingState from '@/components/common/LoadingState.vue'
+import LoadMoreFooter from '@/components/common/LoadMoreFooter.vue'
+import BottomNav from '@/components/navigation/BottomNav.vue'
+import { useCaseDict } from '@/composables/useCaseDict'
+import { usePagination } from '@/composables/usePagination'
+import { CASE_STATUS } from '@/constants/status'
+import { FEEDBACK_COPY, LIST_COPY } from '@/constants/copy'
+import { ROUTES } from '@/constants/routes'
+import type { CaseItem, CaseStatsSummary } from '@/types/case'
+import type { CaseStatusValue } from '@/constants/status'
 import { ensureAgencySession } from '@/utils/agency-auth'
+import { showSuccess } from '@/utils/feedback'
+import { reportError, trackPageView } from '@/utils/logger'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
 const acceptingId = ref('')
+const currentTab = ref(0)
+const activeStatKey = ref<string>()
+const statsSummary = ref<CaseStatsSummary>({ pending: 0, processing: 0, completed: 0 })
 
-const goToMine = () => {
-  uni.navigateTo({ url: '/pages/mine/index' })
-}
-
-const callPhone = (phone: string) => {
-  if (!phone || phone.includes('*')) return
-  uni.makePhoneCall({ phoneNumber: phone })
-}
-const tabs = [
-  { name: '全部', value: null },
-  { name: '待确认', value: 1 },
-  { name: '已受理', value: 2 },
-  { name: '鉴定中', value: 3 },
-  { name: '已打回', value: 5 },
-  { name: '已完成', value: 4 }
+const filterTabs: CaseFilterTab[] = [
+  { name: '全部', key: 'all', value: null },
+  { name: '待确认', key: 'pending', value: CASE_STATUS.PENDING_CONFIRM as CaseStatusValue },
+  { name: '已受理', key: 'accepted', value: CASE_STATUS.ACCEPTED as CaseStatusValue },
+  { name: '鉴定中', key: 'appraising', value: CASE_STATUS.APPRAISING as CaseStatusValue },
+  { name: '已打回', key: 'rework', value: CASE_STATUS.REWORK as CaseStatusValue },
+  { name: '已完成', key: 'completed', value: CASE_STATUS.COMPLETED as CaseStatusValue },
 ]
 
-const normalizeStatus = normalizeCaseStatus
-const currentTab = ref(0)
+const STAT_TO_TAB: Record<string, number> = {
+  pending: 1,
+  completed: 5,
+}
 
-// 列表数据与分页
-const caseList = ref<any[]>([])
-const pageNum = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
-const loading = ref(false)
-const hasMore = ref(true)
+const TAB_TO_STAT: Partial<Record<number, string>> = {
+  1: 'pending',
+  5: 'completed',
+}
 
-const accidentTypes = ref<any[]>([])
+const { getAccidentTypeLabel, loadDicts } = useCaseDict()
 
-const fetchDicts = async () => {
+const {
+  list: caseList,
+  loading,
+  initialized,
+  initialError,
+  loadMoreError,
+  hasMore,
+  refresh,
+  loadMore,
+  retryLoadMore,
+} = usePagination<CaseItem>((params) => {
+  const tabStatus = filterTabs[currentTab.value].value
+  return fetchCaseList({
+    ...params,
+    ...(tabStatus != null ? { status: tabStatus as CaseStatusValue } : {}),
+  })
+})
+
+const statItems = computed(() => [
+  { key: 'pending', label: '待处理', value: statsSummary.value.pending },
+  {
+    key: 'processing',
+    label: '处理中',
+    value: statsSummary.value.processing,
+    clickable: false,
+  },
+  { key: 'completed', label: '已完成', value: statsSummary.value.completed },
+])
+
+const navItems = computed(() => [
+  { key: 'workbench', label: '工作台', active: true },
+  { key: 'mine', label: '个人中心' },
+])
+
+const loadStats = async () => {
   try {
-    const res = await request('/dict/data/biz_accident_type', 'GET')
-    if (res) {
-      accidentTypes.value = res
-    }
-  } catch (error) {
-    console.error('Fetch dict error:', error)
+    statsSummary.value = await fetchCaseStatsSummary()
+  } catch (err) {
+    reportError(err, { scope: 'case_stats' })
   }
 }
 
-const getDictLabel = (value: string, _type: string) => {
-  const dict = accidentTypes.value.find(item => item.dictValue === value)
-  return dict ? dict.dictLabel : value
-}
+const changeTab = (index: number, options?: { statKey?: string }) => {
+  const statKey = options?.statKey ?? TAB_TO_STAT[index]
+  const tabUnchanged = currentTab.value === index
+  const statUnchanged = activeStatKey.value === statKey
+  if (tabUnchanged && statUnchanged) return
 
-const getStatusText = (status: number) => {
-  const map: Record<number, string> = {
-    1: '待确认',
-    2: '已受理',
-    3: '鉴定中',
-    4: '已完成',
-    5: '已打回'
-  }
-  return map[status] || '未知'
-}
-
-// 获取案件列表
-const fetchList = async (isRefresh = false) => {
-  if (loading.value) return
-  loading.value = true
-
-  if (isRefresh) {
-    pageNum.value = 1
-    hasMore.value = true
-  }
-
-  try {
-    const status = tabs[currentTab.value].value
-    const params: any = {
-      pageNum: pageNum.value,
-      pageSize: pageSize.value
-    }
-    if (status) params.status = status
-
-    const res = await request('/biz/case', 'GET', params)
-    
-    if (res && res.list) {
-      if (isRefresh) {
-        caseList.value = res.list
-      } else {
-        caseList.value = [...caseList.value, ...res.list]
-      }
-      total.value = res.total || 0
-      
-      if (caseList.value.length >= total.value) {
-        hasMore.value = false
-      } else {
-        hasMore.value = true
-      }
-    }
-  } catch (error) {
-    console.error('Fetch case list error:', error)
-  } finally {
-    loading.value = false
-    uni.stopPullDownRefresh()
-  }
-}
-
-// 切换Tab
-const switchTab = (index: number) => {
-  if (currentTab.value === index) return
   currentTab.value = index
-  fetchList(true)
+  activeStatKey.value = statKey
+  refresh()
+}
+
+const switchTab = (index: number) => {
+  changeTab(index)
+}
+
+const onStatSelect = (key: string) => {
+  const tabIndex = STAT_TO_TAB[key]
+  if (tabIndex !== undefined) {
+    changeTab(tabIndex, { statKey: key })
+  }
+}
+
+const goToMine = () => {
+  uni.navigateTo({ url: ROUTES.MINE })
+}
+
+const onNavSelect = (key: string) => {
+  if (key === 'mine') goToMine()
 }
 
 const goToDetail = (id: string) => {
-  uni.navigateTo({
-    url: `/pages/detail/index?id=${id}`
-  })
+  uni.navigateTo({ url: `${ROUTES.DETAIL}?id=${id}` })
 }
 
-const handleAccept = async (item: { id: string }) => {
+const handleAccept = async (item: CaseItem) => {
   acceptingId.value = item.id
   try {
-    await request(`/biz/case/${item.id}/accept`, 'POST')
-    uni.showToast({ title: '已确认受理', icon: 'success' })
-    fetchList(true)
-  } catch (e) {
-    console.error('Accept case error:', e)
+    await acceptCase(item.id)
+    showSuccess(FEEDBACK_COPY.acceptSuccess)
+    await Promise.all([refresh(), loadStats()])
+  } catch (err) {
+    reportError(err, { scope: 'accept_case', caseId: item.id })
   } finally {
     acceptingId.value = ''
   }
 }
 
 onLoad(async () => {
+  trackPageView('index/index')
   const ok = await ensureAgencySession()
   if (!ok) return
-  await fetchDicts()
-  fetchList(true)
+  await loadDicts()
+  await Promise.all([refresh(), loadStats()])
 })
+
+const isFirstShow = ref(true)
 
 onShow(async () => {
   if (!userStore.token) return
-  await ensureAgencySession()
+  const ok = await ensureAgencySession()
+  if (!ok) return
+  if (isFirstShow.value) {
+    isFirstShow.value = false
+    return
+  }
+  await Promise.all([refresh(), loadStats()])
 })
 
 onPullDownRefresh(() => {
-  fetchList(true)
+  Promise.all([refresh(), loadStats()])
 })
 
 onReachBottom(() => {
-  if (hasMore.value && !loading.value) {
-    pageNum.value += 1
-    fetchList()
-  }
+  loadMore()
 })
 </script>
 
-<style scoped>
-.container {
+<style scoped lang="scss">
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.workbench-page {
+  @include page-background;
   min-height: 100vh;
-  background-color: #FFFFFF;
-  padding-bottom: 120rpx;
+  padding-bottom: calc(110rpx + env(safe-area-inset-bottom));
 }
 
-/* Tabs */
-.tabs-scroll {
-  background-color: #FFFFFF;
-  border-bottom: 2rpx solid #E5E7EB;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  white-space: nowrap;
-}
-
-.tabs {
-  display: inline-flex;
-  min-width: 100%;
-}
-
-.tab-item {
-  flex-shrink: 0;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 96rpx;
-  padding: 0 28rpx;
-  position: relative;
-}
-
-.tab-text {
-  font-size: 30rpx;
-  color: #6B7280;
-  transition: all 0.3s;
-}
-
-.tab-item.active .tab-text {
-  color: #111827;
-  font-weight: 600;
-}
-
-.tab-line {
-  position: absolute;
-  bottom: 0;
-  width: 100%;
-  height: 4rpx;
-  background-color: #111827;
-}
-
-/* 列表容器 */
-.list-container {
-  padding: 40rpx;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 160rpx;
-}
-
-.empty-text {
-  color: #6B7280;
-  font-size: 32rpx;
-}
-
-/* 卡片 */
-.case-card {
-  background-color: #FFFFFF;
-  border: 2rpx solid #E5E7EB;
-  border-radius: 8rpx;
-  padding: 40rpx;
-  margin-bottom: 40rpx;
-  transition: all 0.3s;
-}
-
-.case-card:active {
-  background-color: #F9FAFB;
-  border-color: #D1D5DB;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 24rpx;
-  border-bottom: 2rpx solid #E5E7EB;
-  margin-bottom: 30rpx;
-}
-
-.report-no {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #111827;
-  font-family: consolas, monospace;
-}
-
-.status-text {
-  font-size: 26rpx;
-  font-weight: 500;
-}
-
-.status-1 { color: #D97706; }
-.status-2 { color: #2563EB; }
-.status-3 { color: #7C3AED; }
-.status-4 { color: #111827; }
-.status-5 { color: #DC2626; }
-
-.info-row {
-  display: flex;
-  margin-bottom: 20rpx;
-}
-.info-row:last-child {
-  margin-bottom: 0;
-}
-
-.info-label {
-  font-size: 28rpx;
-  color: #6B7280;
-  width: 160rpx;
-}
-
-.info-value {
-  font-size: 28rpx;
-  color: #111827;
-  flex: 1;
-}
-
-.font-bold {
-  font-weight: 500;
-}
-
-.text-blue {
-  color: #2563EB;
-}
-
-.text-red {
-  color: #DC2626;
-}
-
-.card-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 30rpx;
-  padding-top: 24rpx;
-  border-top: 2rpx dashed #E5E7EB;
-}
-
-.date-text {
-  font-size: 26rpx;
-  color: #9CA3AF;
-}
-
-.actions {
-  display: flex;
-  gap: 20rpx;
-}
-
-.action-btn {
-  font-size: 26rpx;
-  padding: 0 32rpx;
-  height: 60rpx;
-  line-height: 60rpx;
-  border-radius: 4rpx;
-  background: #F3F4F6;
-  color: #4B5563;
-  margin: 0;
-}
-
-.action-btn::after {
-  display: none;
-}
-
-.action-btn.primary {
-  background: #2563EB;
-  color: #FFFFFF;
-}
-
-.action-btn.danger {
-  background: #FFFFFF;
-  color: #DC2626;
-  border: 2rpx solid #DC2626;
-}
-
-.loading-more {
-  text-align: center;
-  font-size: 26rpx;
-  color: #9CA3AF;
-  padding: 20rpx 0;
-}
-
-/* 底部动作栏 */
-.bottom-action-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 110rpx;
-  background-color: #FFFFFF;
-  border-top: 2rpx solid #E5E7EB;
-  display: flex;
-  z-index: 100;
-}
-
-.nav-item {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.nav-item:active {
-  background-color: #F9FAFB;
-}
-
-.nav-item.active .nav-text {
-  color: #2563EB;
-  font-weight: 600;
-}
-
-.nav-text {
-  font-size: 30rpx;
-  color: #4B5563;
-  font-weight: 500;
+.workbench-page__body {
+  padding: $space-lg $space-xl $space-xl;
 }
 </style>

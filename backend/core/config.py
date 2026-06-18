@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     )
     wechat_appid: str = Field(default="", description="微信小程序 AppID")
     wechat_secret: str = Field(default="", description="微信小程序 AppSecret")
+    wechat_dev_fallback_phone: str = Field(
+        default="",
+        description="本地开发未配置微信密钥时使用的模拟手机号，仅 dev 环境配置",
+    )
     public_base_url: str = Field(
         default="",
         description="对外访问根 URL（如 https://api.example.com），用于生成上传文件链接；为空时从请求头推断",

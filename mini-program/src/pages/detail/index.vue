@@ -1,724 +1,383 @@
 <template>
-  <view class="detail-container" v-if="caseDetail">
-    <view class="header-section">
-      <view class="status-wrapper">
-        <text :class="['status-title', 'text-status-' + caseDetail.status]">
-          {{ getStatusText(caseDetail.status) }}
-        </text>
-        <text class="report-no">报案号：{{ caseDetail.reportNumber }}</text>
-      </view>
+  <LoadingState v-if="detailLoading && !caseDetail" fullscreen />
+  <EmptyState
+    v-else-if="loadError"
+    variant="error"
+    :title="loadError === 'not_found' ? EMPTY_STATE_COPY.detailNotFoundTitle : undefined"
+    :description="loadError === 'not_found' ? EMPTY_STATE_COPY.detailNotFoundDesc : undefined"
+    :action-text="FEEDBACK_COPY.retry"
+    @action="retryLoad"
+  />
+  <view v-else-if="caseDetail" class="detail-page">
+    <view class="detail-page__header">
+      <StatusTag :status="caseDetail.status" variant="solid" class="detail-page__status" />
+      <text class="detail-page__report-no">报案号：{{ caseDetail.reportNumber }}</text>
     </view>
 
-    <!-- 基础信息区 -->
-    <view class="section-block">
-      <view class="section-title">案件基础信息</view>
-      <view class="info-list">
-        <view class="info-item" v-if="caseStatus === 5 && caseDetail.reworkRemark">
-          <text class="info-label text-red">打回原因</text>
-          <text class="info-value text-red font-bold">{{ caseDetail.reworkRemark }}</text>
+    <FormSection title="案件基础信息">
+      <view class="detail-page__info-list">
+        <view
+          v-if="caseStatus === CASE_STATUS.REWORK && caseDetail.reworkRemark"
+          class="detail-page__info-row"
+        >
+          <text class="detail-page__label detail-page__label--danger">打回原因</text>
+          <text class="detail-page__value detail-page__value--danger">{{ caseDetail.reworkRemark }}</text>
         </view>
-        <view class="info-item">
-          <text class="info-label">伤者姓名</text>
-          <text class="info-value">{{ caseDetail.victimName }}</text>
+        <view class="detail-page__info-row">
+          <text class="detail-page__label">伤者姓名</text>
+          <text class="detail-page__value">{{ caseDetail.victimName }}</text>
         </view>
-        <view class="info-item">
-          <text class="info-label">联系电话</text>
+        <view class="detail-page__info-row">
+          <text class="detail-page__label">联系电话</text>
           <text
-            :class="['info-value', canCallPhone ? 'text-blue' : '']"
+            :class="['detail-page__value', canCallPhone ? 'detail-page__value--link' : '']"
             @click="canCallPhone && callPhone(caseDetail.victimPhone)"
           >
             {{ caseDetail.victimPhone }}
           </text>
         </view>
-        <view class="info-item">
-          <text class="info-label">出险地点</text>
-          <text class="info-value">{{ caseDetail.province }}{{ caseDetail.city }}{{ caseDetail.district }}</text>
+        <view class="detail-page__info-row">
+          <text class="detail-page__label">出险地点</text>
+          <text class="detail-page__value">
+            {{ caseDetail.province }}{{ caseDetail.city }}{{ caseDetail.district }}
+          </text>
         </view>
-        <view class="info-item">
-          <text class="info-label">报案日期</text>
-          <text class="info-value">{{ caseDetail.reportDate }}</text>
+        <view class="detail-page__info-row">
+          <text class="detail-page__label">报案日期</text>
+          <text class="detail-page__value">{{ caseDetail.reportDate }}</text>
         </view>
-        <view class="info-item">
-          <text class="info-label">保险公司</text>
-          <text class="info-value">{{ caseDetail.insuranceCompany }}</text>
+        <view class="detail-page__info-row">
+          <text class="detail-page__label">保险公司</text>
+          <text class="detail-page__value">{{ caseDetail.insuranceCompany }}</text>
         </view>
       </view>
-    </view>
+    </FormSection>
 
-    <!-- 机构鉴定工作区 -->
-    <view class="section-block" v-if="!isPatientMode">
-      <view class="section-title">鉴定流转</view>
-
-      <!-- 待确认：确认受理 -->
-      <template v-if="caseStatus === 1">
-        <view class="hint-text">请核实案件概况后确认受理，受理后可查看完整伤者信息并进行视频取证。</view>
-        <button class="btn-primary mt-40" :loading="submitLoading" @click="handleAccept">确认受理</button>
+    <FormSection v-if="!isPatientMode" title="鉴定流转">
+      <template v-if="caseStatus === CASE_STATUS.PENDING_CONFIRM">
+        <text class="detail-page__hint">请核实案件概况后确认受理，受理后可查看完整伤者信息并进行视频取证。</text>
+        <SubmitBar text="确认受理" :loading="submitLoading" @submit="handleAccept" />
       </template>
 
-      <!-- 已受理 / 已打回：上传视频 -->
-      <template v-if="caseStatus === 2 || caseStatus === 5">
-        <view class="form-group">
-          <text class="form-label required">鉴定取证视频</text>
-          <text class="upload-hint">可多次上传，最多 9 个</text>
-          <view class="video-list">
+      <template v-if="caseStatus === CASE_STATUS.ACCEPTED || caseStatus === CASE_STATUS.REWORK">
+        <view class="detail-page__upload-group">
+          <text class="detail-page__form-label detail-page__form-label--required">鉴定取证视频</text>
+          <text class="detail-page__upload-hint">可多次上传，最多 {{ MAX_VIDEO_COUNT }} 个</text>
+          <view class="detail-page__video-list">
             <view
-              class="video-cell"
               v-for="(file, index) in form.appraisalVideos"
               :key="file.id"
+              class="detail-page__video-cell"
               @click="previewVideo(file)"
             >
               <image
                 v-if="file.thumb && !file.thumbBroken"
-                class="video-thumb"
+                class="detail-page__video-thumb"
                 :src="file.thumb"
                 mode="aspectFill"
                 @error="onThumbError(file)"
               />
-              <view v-else class="video-thumb video-thumb-placeholder" />
-              <view class="play-overlay">
-                <text class="play-icon">▶</text>
+              <view v-else class="detail-page__video-thumb detail-page__video-thumb--placeholder" />
+              <view class="detail-page__play-overlay">
+                <text class="detail-page__play-icon">▶</text>
               </view>
-              <view class="delete-btn" @click.stop="removeVideo(index)">✕</view>
+              <view class="detail-page__delete-btn" @click.stop="removeVideo(index)">✕</view>
             </view>
-            <view class="upload-btn" @click="chooseVideo" v-if="form.appraisalVideos.length < MAX_VIDEO_COUNT">
-              <text class="add-icon">+</text>
-              <text class="add-text">上传视频</text>
+            <view
+              v-if="form.appraisalVideos.length < MAX_VIDEO_COUNT"
+              class="detail-page__upload-btn"
+              @click="chooseVideo"
+            >
+              <text class="detail-page__add-icon">+</text>
+              <text class="detail-page__add-text">上传视频</text>
             </view>
           </view>
         </view>
-        <button class="btn-primary mt-60" :loading="submitLoading" @click="submitVideos">提交鉴定视频</button>
+        <SubmitBar text="提交鉴定视频" :loading="submitLoading" @submit="submitVideos" />
       </template>
 
-      <!-- 鉴定中：只读视频 + 填文书编号 -->
-      <template v-if="caseStatus === 3">
-        <view class="form-group" v-if="caseDetail.appraisalVideos?.length">
-          <text class="form-label">已提交视频（只读）</text>
-          <view class="readonly-video-list">
-            <text class="readonly-video-item" v-for="(v, i) in caseDetail.appraisalVideos" :key="i">
+      <template v-if="caseStatus === CASE_STATUS.APPRAISING">
+        <view v-if="caseDetail.appraisalVideos?.length" class="detail-page__upload-group">
+          <text class="detail-page__form-label">已提交视频（只读）</text>
+          <view class="detail-page__readonly-list">
+            <text
+              v-for="(v, i) in caseDetail.appraisalVideos"
+              :key="i"
+              class="detail-page__readonly-item"
+            >
               {{ v.name || '视频' + (i + 1) }}
             </text>
           </view>
         </view>
-        <view class="form-group">
-          <text class="form-label required">鉴定文书编号</text>
-          <input
-            class="form-input"
-            v-model="form.documentNumber"
-            placeholder="请输入鉴定文书编号"
-            maxlength="50"
-            placeholder-class="ph-color"
-          />
-        </view>
-        <view class="form-group">
-          <text class="form-label required">电子证书</text>
-          <text class="upload-hint">仅支持 PDF 格式，只能上传 1 个</text>
-          <view class="cert-upload-area">
-            <view class="cert-file" v-if="form.electronicCertificate">
-              <text class="cert-name" @click="previewCertificate">{{ form.electronicCertificate.name || '电子证书.pdf' }}</text>
-              <view class="delete-btn cert-delete" @click="removeCertificate">✕</view>
+        <FormField
+          v-model="form.documentNumber"
+          label="鉴定文书编号"
+          placeholder="请输入鉴定文书编号"
+          :maxlength="50"
+          required
+        />
+        <view class="detail-page__upload-group">
+          <text class="detail-page__form-label detail-page__form-label--required">电子证书</text>
+          <text class="detail-page__upload-hint">仅支持 PDF 格式，只能上传 1 个</text>
+          <view class="detail-page__cert-area">
+            <view v-if="form.electronicCertificate" class="detail-page__cert-file">
+              <text class="detail-page__cert-name" @click="previewCertificate">
+                {{ form.electronicCertificate.name || '电子证书.pdf' }}
+              </text>
+              <view class="detail-page__delete-btn detail-page__cert-delete" @click="removeCertificate">
+                ✕
+              </view>
             </view>
-            <view class="upload-btn cert-upload-btn" @click="chooseCertificate" v-else>
-              <text class="add-icon">+</text>
-              <text class="add-text">上传 PDF</text>
+            <view v-else class="detail-page__upload-btn detail-page__cert-upload" @click="chooseCertificate">
+              <text class="detail-page__add-icon">+</text>
+              <text class="detail-page__add-text">上传 PDF</text>
             </view>
           </view>
         </view>
-        <button class="btn-primary mt-60" :loading="submitLoading" @click="submitDocumentNumber">提交文书编号</button>
+        <SubmitBar text="提交文书编号" :loading="submitLoading" @submit="submitDocumentNumber" />
       </template>
 
-      <!-- 已完成：全只读 -->
-      <template v-if="caseStatus === 4">
-        <view class="info-list">
-          <view class="info-item" v-if="caseDetail.documentNumber">
-            <text class="info-label">文书编号</text>
-            <text class="info-value highlight">{{ caseDetail.documentNumber }}</text>
+      <template v-if="caseStatus === CASE_STATUS.COMPLETED">
+        <view class="detail-page__info-list">
+          <view v-if="caseDetail.documentNumber" class="detail-page__info-row">
+            <text class="detail-page__label">文书编号</text>
+            <text class="detail-page__value detail-page__value--highlight">{{ caseDetail.documentNumber }}</text>
           </view>
-          <view class="info-item" v-if="caseDetail.electronicCertificate?.url">
-            <text class="info-label">电子证书</text>
-            <text class="info-value text-blue" @click="previewServerCertificate">
+          <view v-if="caseDetail.electronicCertificate?.url" class="detail-page__info-row">
+            <text class="detail-page__label">电子证书</text>
+            <text class="detail-page__value detail-page__value--link" @click="previewServerCertificate">
               {{ caseDetail.electronicCertificate.name || '查看电子证书' }}
             </text>
           </view>
-          <view class="info-item col-item" v-if="caseDetail.appraisalVideos?.length">
-            <text class="info-label mb-16">鉴定视频</text>
-            <view class="readonly-video-list">
-              <text class="readonly-video-item" v-for="(v, i) in caseDetail.appraisalVideos" :key="i">
+          <view v-if="caseDetail.appraisalVideos?.length" class="detail-page__info-row detail-page__info-row--col">
+            <text class="detail-page__label">鉴定视频</text>
+            <view class="detail-page__readonly-list">
+              <text
+                v-for="(v, i) in caseDetail.appraisalVideos"
+                :key="i"
+                class="detail-page__readonly-item"
+              >
                 {{ v.name || '视频' + (i + 1) }}
               </text>
             </view>
           </view>
-          <!-- 历史数据只读 -->
-          <view class="info-item" v-if="caseDetail.appraisalAmount">
-            <text class="info-label">理赔金额（历史）</text>
-            <text class="info-value">¥{{ caseDetail.appraisalAmount }}</text>
+          <view v-if="caseDetail.appraisalAmount" class="detail-page__info-row">
+            <text class="detail-page__label">理赔金额（历史）</text>
+            <text class="detail-page__value">¥{{ caseDetail.appraisalAmount }}</text>
           </view>
-          <view class="info-item col-item" v-if="caseDetail.appraisalConclusion">
-            <text class="info-label mb-16">鉴定结论（历史）</text>
-            <view class="readonly-box">{{ caseDetail.appraisalConclusion }}</view>
+          <view v-if="caseDetail.appraisalConclusion" class="detail-page__info-row detail-page__info-row--col">
+            <text class="detail-page__label">鉴定结论（历史）</text>
+            <view class="detail-page__readonly-box">{{ caseDetail.appraisalConclusion }}</view>
           </view>
         </view>
       </template>
-    </view>
+    </FormSection>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { request, BASE_URL, resolveFileUrl } from '@/utils/request'
-import { isAgencyUser, normalizeCaseStatus } from '@/utils/role'
-import { ensureAgencySession } from '@/utils/agency-auth'
-import { useUserStore } from '@/store/modules/user'
+import StatusTag from '@/components/common/StatusTag.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import LoadingState from '@/components/common/LoadingState.vue'
+import FormField from '@/components/form/FormField.vue'
+import FormSection from '@/components/form/FormSection.vue'
+import SubmitBar from '@/components/form/SubmitBar.vue'
+import { useCaseDetail } from '@/composables/useCaseDetail'
+import { CASE_STATUS } from '@/constants/status'
+import { EMPTY_STATE_COPY, FEEDBACK_COPY } from '@/constants/copy'
+import { trackPageView } from '@/utils/logger'
 
-const userStore = useUserStore()
-const caseId = ref('')
-const caseDetail = ref<any>(null)
-const submitLoading = ref(false)
+const {
+  MAX_VIDEO_COUNT,
+  caseDetail,
+  form,
+  submitLoading,
+  detailLoading,
+  loadError,
+  isPatientMode,
+  caseStatus,
+  canCallPhone,
+  initFromOptions,
+  handleShow,
+  fetchDetail,
+  callPhone,
+  onThumbError,
+  previewVideo,
+  chooseVideo,
+  removeVideo,
+  chooseCertificate,
+  removeCertificate,
+  previewCertificate,
+  previewServerCertificate,
+  handleAccept,
+  submitVideos,
+  submitDocumentNumber,
+} = useCaseDetail()
 
-const isPatientMode = computed(() => !isAgencyUser(userStore.userInfo))
-
-const caseStatus = computed(() => normalizeCaseStatus(caseDetail.value?.status))
-
-const canCallPhone = computed(() => {
-  if (!caseDetail.value) return false
-  if (isPatientMode.value) return true
-  return caseStatus.value !== 1
-})
-
-const MAX_VIDEO_COUNT = 9
-
-interface AppraisalVideoFormItem {
-  id: string
-  name: string
-  url: string
-  localPath?: string
-  thumb?: string
-  thumbBroken?: boolean
-}
-
-interface ElectronicCertificateFormItem {
-  name: string
-  url: string
-  localPath?: string
-}
-
-const form = reactive({
-  appraisalVideos: [] as AppraisalVideoFormItem[],
-  documentNumber: '',
-  electronicCertificate: null as ElectronicCertificateFormItem | null
-})
-
-let uploadPendingCount = 0
-let uploadSeq = 0
-let loadingDepth = 0
-let skipNextDetailRefresh = false
-
-const showPageLoading = (title: string) => {
-  loadingDepth++
-  if (loadingDepth === 1) {
-    uni.showLoading({ title, mask: true })
-  }
-}
-
-const hidePageLoading = () => {
-  loadingDepth = Math.max(0, loadingDepth - 1)
-  if (loadingDepth === 0) {
-    uni.hideLoading()
-  }
-}
-
-const beginUploadLoading = () => {
-  uploadPendingCount++
-  if (uploadPendingCount === 1) {
-    showPageLoading('上传中...')
-  }
-}
-
-const endUploadLoading = () => {
-  uploadPendingCount = Math.max(0, uploadPendingCount - 1)
-  if (uploadPendingCount === 0) {
-    hidePageLoading()
-  }
-}
-
-const mapServerVideos = (videos: AppraisalVideoFormItem[]) =>
-  videos.map((v, i) => ({
-    id: v.id || `server-${i}-${v.url}`,
-    name: v.name || `视频${i + 1}`,
-    url: resolveFileUrl(v.url),
-    thumb: v.thumb,
-    thumbBroken: false
-  }))
-
-const initFormVideos = (status: number, videos?: AppraisalVideoFormItem[]) => {
-  if (status === 5 && Array.isArray(videos) && videos.length > 0) {
-    form.appraisalVideos = mapServerVideos(videos)
-    return
-  }
-  form.appraisalVideos = []
+const retryLoad = () => {
+  fetchDetail()
 }
 
 onLoad(async (options) => {
-  if (options?.id) {
-    caseId.value = options.id
-    await fetchDetail()
-  }
+  trackPageView('detail/index', { id: options?.id })
+  await initFromOptions(options?.id)
 })
 
-onShow(async () => {
-  if (userStore.token) {
-    await userStore.fetchUserInfo()
-  }
-  if (isAgencyUser(userStore.userInfo)) {
-    const ok = await ensureAgencySession(false)
-    if (!ok) return
-  }
-  if (skipNextDetailRefresh) {
-    skipNextDetailRefresh = false
-    return
-  }
-  // 已有本地未提交视频时不刷新，避免覆盖用户刚选的内容
-  if (caseId.value && form.appraisalVideos.length === 0 && !form.electronicCertificate && uploadPendingCount === 0) {
-    await fetchDetail()
-  }
+onShow(() => {
+  handleShow()
 })
-
-const fetchDetail = async (options?: { preserveVideos?: boolean }) => {
-  showPageLoading('加载中...')
-  try {
-    const res = await request(`/biz/case/${caseId.value}`, 'GET')
-    if (res) {
-      const status = normalizeCaseStatus(res.status)
-      caseDetail.value = {
-        ...res,
-        status
-      }
-      if (!options?.preserveVideos) {
-        initFormVideos(status, res.appraisalVideos)
-      }
-      form.documentNumber = res.documentNumber || ''
-      form.electronicCertificate = res.electronicCertificate?.url
-        ? {
-            name: res.electronicCertificate.name || '电子证书.pdf',
-            url: resolveFileUrl(res.electronicCertificate.url)
-          }
-        : null
-    }
-  } catch (error) {
-    console.error('Fetch detail error:', error)
-  } finally {
-    hidePageLoading()
-  }
-}
-
-const getStatusText = (status: number) => {
-  const map: Record<number, string> = {
-    1: '待确认',
-    2: '已受理',
-    3: '鉴定中',
-    4: '已完成',
-    5: '已打回'
-  }
-  return map[status] || '未知'
-}
-
-const callPhone = (phone: string) => {
-  if (!phone || phone.includes('*')) return
-  uni.makePhoneCall({ phoneNumber: phone })
-}
-
-const onThumbError = (file: AppraisalVideoFormItem) => {
-  file.thumbBroken = true
-}
-
-const previewVideo = (file: AppraisalVideoFormItem) => {
-  const previewUrl = file.localPath || resolveFileUrl(file.url)
-  if (!previewUrl) return
-  uni.previewMedia({
-    sources: [{ url: previewUrl, type: 'video' }],
-    fail: () => {
-      uni.showToast({ title: '视频预览失败，请检查网络或域名配置', icon: 'none' })
-    }
-  })
-}
-
-const chooseVideo = () => {
-  const remain = MAX_VIDEO_COUNT - form.appraisalVideos.length
-  if (remain <= 0) {
-    return uni.showToast({ title: `最多上传 ${MAX_VIDEO_COUNT} 个视频`, icon: 'none' })
-  }
-  skipNextDetailRefresh = true
-  uni.chooseMedia({
-    count: 1,
-    mediaType: ['video'],
-    sourceType: ['album', 'camera'],
-    maxDuration: 300,
-    success: (res) => {
-      const file = res.tempFiles[0]
-      if (!file) return
-      if (form.appraisalVideos.length >= MAX_VIDEO_COUNT) {
-        return uni.showToast({ title: `最多上传 ${MAX_VIDEO_COUNT} 个视频`, icon: 'none' })
-      }
-      uploadVideo(file.tempFilePath, file.thumbTempFilePath)
-    }
-  })
-}
-
-const uploadVideo = (filePath: string, thumbPath?: string) => {
-  beginUploadLoading()
-  const token = userStore.token || uni.getStorageSync('token')
-  const videoIndex = ++uploadSeq
-  const itemId = `local-${Date.now()}-${videoIndex}`
-  uni.uploadFile({
-    url: `${BASE_URL}/file/upload/video`,
-    filePath,
-    name: 'file',
-    header: { 'x-access-token': token },
-    success: (uploadRes) => {
-      try {
-        const resData = JSON.parse(uploadRes.data)
-        if (resData.code === 200 && resData.data?.fileUrl) {
-          form.appraisalVideos.push({
-            id: itemId,
-            name: `鉴定视频${form.appraisalVideos.length + 1}`,
-            url: resolveFileUrl(resData.data.fileUrl),
-            localPath: filePath,
-            thumb: thumbPath,
-            thumbBroken: false
-          })
-          uni.showToast({ title: '上传成功', icon: 'none' })
-        } else {
-          uni.showToast({ title: resData.msg || '上传失败', icon: 'none' })
-        }
-      } catch {
-        uni.showToast({ title: '解析失败', icon: 'none' })
-      }
-    },
-    fail: () => uni.showToast({ title: '上传异常', icon: 'none' }),
-    complete: () => endUploadLoading()
-  })
-}
-
-const removeVideo = (index: number) => {
-  form.appraisalVideos.splice(index, 1)
-}
-
-const chooseCertificate = () => {
-  skipNextDetailRefresh = true
-  uni.chooseMessageFile({
-    count: 1,
-    type: 'file',
-    extension: ['pdf'],
-    success: (res) => {
-      const file = res.tempFiles[0]
-      if (!file) return
-      uploadCertificate(file.path, file.name || '电子证书.pdf')
-    },
-    fail: () => {
-      uni.showToast({ title: '请选择 PDF 文件', icon: 'none' })
-    }
-  })
-}
-
-const uploadCertificate = (filePath: string, fileName: string) => {
-  beginUploadLoading()
-  const token = userStore.token || uni.getStorageSync('token')
-  uni.uploadFile({
-    url: `${BASE_URL}/file/upload/pdf`,
-    filePath,
-    name: 'file',
-    header: { 'x-access-token': token },
-    success: (uploadRes) => {
-      try {
-        const resData = JSON.parse(uploadRes.data)
-        if (resData.code === 200 && resData.data?.fileUrl) {
-          form.electronicCertificate = {
-            name: fileName,
-            url: resolveFileUrl(resData.data.fileUrl),
-            localPath: filePath
-          }
-          uni.showToast({ title: '上传成功', icon: 'none' })
-        } else {
-          uni.showToast({ title: resData.msg || '上传失败', icon: 'none' })
-        }
-      } catch {
-        uni.showToast({ title: '解析失败', icon: 'none' })
-      }
-    },
-    fail: () => uni.showToast({ title: '上传异常', icon: 'none' }),
-    complete: () => endUploadLoading()
-  })
-}
-
-const removeCertificate = () => {
-  form.electronicCertificate = null
-}
-
-const openPdfDocument = (url: string) => {
-  if (!url) return
-  uni.showLoading({ title: '打开中...', mask: true })
-  uni.downloadFile({
-    url,
-    success: (res) => {
-      if (res.statusCode === 200) {
-        uni.openDocument({
-          filePath: res.tempFilePath,
-          showMenu: true,
-          fail: () => uni.showToast({ title: '无法打开 PDF', icon: 'none' })
-        })
-      } else {
-        uni.showToast({ title: '下载失败', icon: 'none' })
-      }
-    },
-    fail: () => uni.showToast({ title: '下载失败', icon: 'none' }),
-    complete: () => uni.hideLoading()
-  })
-}
-
-const previewCertificate = () => {
-  const cert = form.electronicCertificate
-  if (!cert) return
-  openPdfDocument(cert.localPath || cert.url)
-}
-
-const previewServerCertificate = () => {
-  const cert = caseDetail.value?.electronicCertificate
-  if (!cert?.url) return
-  openPdfDocument(resolveFileUrl(cert.url))
-}
-
-const handleAccept = async () => {
-  submitLoading.value = true
-  try {
-    await request(`/biz/case/${caseId.value}/accept`, 'POST')
-    uni.showToast({ title: '已确认受理', icon: 'success' })
-    fetchDetail()
-  } catch (e) {
-    console.error(e)
-  } finally {
-    submitLoading.value = false
-  }
-}
-
-const submitVideos = async () => {
-  if (form.appraisalVideos.length === 0) {
-    return uni.showToast({ title: '请至少上传一个视频', icon: 'none' })
-  }
-  submitLoading.value = true
-  try {
-    await request(`/biz/case/${caseId.value}/appraisal-videos`, 'POST', {
-      appraisalVideos: form.appraisalVideos.map(({ name, url }) => ({ name, url }))
-    })
-    uni.showToast({ title: '提交成功', icon: 'success' })
-    fetchDetail()
-  } catch (error) {
-    console.error(error)
-  } finally {
-    submitLoading.value = false
-  }
-}
-
-const submitDocumentNumber = async () => {
-  if (!form.documentNumber.trim()) {
-    return uni.showToast({ title: '请输入文书编号', icon: 'none' })
-  }
-  if (!form.electronicCertificate?.url) {
-    return uni.showToast({ title: '请上传电子证书', icon: 'none' })
-  }
-  submitLoading.value = true
-  try {
-    await request(`/biz/case/${caseId.value}/document-number`, 'POST', {
-      documentNumber: form.documentNumber.trim(),
-      electronicCertificate: {
-        name: form.electronicCertificate.name,
-        url: form.electronicCertificate.url
-      }
-    })
-    uni.showToast({ title: '提交成功', icon: 'success' })
-    fetchDetail()
-  } catch (error) {
-    console.error(error)
-  } finally {
-    submitLoading.value = false
-  }
-}
 </script>
 
-<style scoped>
-.detail-container {
+<style scoped lang="scss">
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.detail-page {
+  @include page-background;
   min-height: 100vh;
-  background-color: #F9FAFB;
-  padding-bottom: 80rpx;
+  padding-bottom: $space-3xl;
+
+  :deep(.form-section) {
+    padding: 0 $space-xl;
+  }
 }
 
-.header-section {
-  background-color: #FFFFFF;
-  padding: 60rpx 40rpx;
-  border-bottom: 2rpx solid #E5E7EB;
+.detail-page__header {
+  background-color: $color-card-bg;
+  padding: $space-2xl $space-xl;
+  border-bottom: 2rpx solid $color-border;
 }
 
-.status-wrapper {
-  display: flex;
-  flex-direction: column;
-}
-
-.status-title {
-  font-size: 56rpx;
+.detail-page__status :deep(.status-tag__text) {
+  font-size: 48rpx;
   font-weight: 600;
-  margin-bottom: 16rpx;
 }
 
-.text-status-1 { color: #D97706; }
-.text-status-2 { color: #2563EB; }
-.text-status-3 { color: #7C3AED; }
-.text-status-4 { color: #111827; }
-.text-status-5 { color: #DC2626; }
-
-.report-no {
-  font-size: 28rpx;
-  color: #6B7280;
+.detail-page__report-no {
+  display: block;
+  margin-top: $space-sm;
+  font-size: $font-size-body;
+  color: $color-secondary;
   font-family: consolas, monospace;
 }
 
-.section-block {
-  background-color: #FFFFFF;
-  margin-top: 24rpx;
-  padding: 40rpx;
-  border-top: 2rpx solid #E5E7EB;
-  border-bottom: 2rpx solid #E5E7EB;
-}
-
-.section-title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 40rpx;
-  padding-left: 16rpx;
-  border-left: 6rpx solid #111827;
-}
-
-.hint-text {
-  font-size: 28rpx;
-  color: #6B7280;
-  line-height: 1.6;
-}
-
-.info-list {
+.detail-page__info-list {
   display: flex;
   flex-direction: column;
 }
 
-.info-item {
+.detail-page__info-row {
   display: flex;
   justify-content: space-between;
-  padding: 30rpx 0;
-  border-bottom: 2rpx solid #F3F4F6;
+  padding: $space-md 0;
+  border-bottom: 2rpx solid #f3f4f6;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &--col {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
-.info-item:last-child {
-  border-bottom: none;
-}
-
-.info-item.col-item {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.info-label {
-  color: #6B7280;
+.detail-page__label {
+  color: $color-secondary;
   font-size: 30rpx;
   min-width: 160rpx;
+
+  &--danger {
+    color: $color-error;
+  }
 }
 
-.info-value {
-  color: #111827;
+.detail-page__value {
+  color: $color-title;
   font-size: 30rpx;
   text-align: right;
   flex: 1;
+
+  &--link {
+    color: $color-primary;
+  }
+
+  &--danger {
+    color: $color-error;
+    font-weight: 500;
+  }
+
+  &--highlight {
+    font-size: 36rpx;
+    font-weight: 600;
+  }
 }
 
-.text-blue { color: #2563EB; }
-.text-red { color: #DC2626; }
-.font-bold { font-weight: 500; }
-.highlight { font-size: 36rpx; font-weight: 600; }
-.mb-16 { margin-bottom: 16rpx; }
-
-.readonly-box {
-  background-color: #F9FAFB;
-  padding: 30rpx;
-  border: 2rpx solid #E5E7EB;
-  border-radius: 4rpx;
-  width: 100%;
-  box-sizing: border-box;
-  color: #374151;
-  font-size: 28rpx;
+.detail-page__hint {
+  display: block;
+  font-size: $font-size-body;
+  color: $color-secondary;
   line-height: 1.6;
+  margin-bottom: $space-lg;
 }
 
-.form-group { margin-bottom: 60rpx; }
+.detail-page__upload-group {
+  margin-bottom: $space-lg;
+}
 
-.form-label {
+.detail-page__form-label {
   display: block;
-  font-size: 28rpx;
-  color: #374151;
+  font-size: $font-size-body;
+  color: $color-body;
   font-weight: 500;
-  margin-bottom: 20rpx;
+  margin-bottom: $space-sm;
+
+  &--required::after {
+    content: ' *';
+    color: $color-error;
+  }
 }
 
-.form-label.required::after {
-  content: " *";
-  color: #DC2626;
-}
-
-.form-input {
-  width: 100%;
-  height: 80rpx;
-  font-size: 32rpx;
-  color: #111827;
-  border-bottom: 2rpx solid #E5E7EB;
-}
-
-.ph-color { color: #9CA3AF; }
-
-.upload-hint {
+.detail-page__upload-hint {
   display: block;
-  font-size: 24rpx;
-  color: #9CA3AF;
-  margin: -8rpx 0 16rpx;
+  font-size: $font-size-caption;
+  color: $color-hint;
+  margin: -4rpx 0 $space-sm;
 }
 
-.video-list {
+.detail-page__video-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 20rpx;
+  gap: $space-md;
 }
 
-.video-cell,
-.upload-btn {
+.detail-page__video-cell,
+.detail-page__upload-btn {
   position: relative;
   width: 160rpx;
   height: 160rpx;
-  border-radius: 4rpx;
+  border-radius: $radius-sm;
   box-sizing: border-box;
   overflow: hidden;
   flex-shrink: 0;
 }
 
-.video-cell {
-  border: 2rpx solid #E5E7EB;
-  background: #F9FAFB;
+.detail-page__video-cell {
+  border: 2rpx solid $color-border;
+  background: $color-page-bg;
 }
 
-.video-thumb {
+.detail-page__video-thumb {
   width: 100%;
   height: 100%;
+
+  &--placeholder {
+    background: #d1d5db;
+  }
 }
 
-.video-thumb-placeholder {
-  background: #D1D5DB;
-}
-
-.play-overlay {
+.detail-page__play-overlay {
   position: absolute;
   inset: 0;
   display: flex;
@@ -728,90 +387,104 @@ const submitDocumentNumber = async () => {
   pointer-events: none;
 }
 
-.play-icon {
+.detail-page__play-icon {
   font-size: 44rpx;
-  color: #FFFFFF;
+  color: #ffffff;
   line-height: 1;
-  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.35);
 }
 
-.delete-btn {
+.detail-page__delete-btn {
   position: absolute;
   top: 8rpx;
   right: 8rpx;
   width: 36rpx;
   height: 36rpx;
   background: rgba(255, 255, 255, 0.92);
-  border: 2rpx solid #E5E7EB;
+  border: 2rpx solid $color-border;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 22rpx;
-  color: #6B7280;
+  color: $color-secondary;
   z-index: 1;
 }
 
-.upload-btn {
-  background-color: #F9FAFB;
-  border: 2rpx dashed #D1D5DB;
+.detail-page__upload-btn {
+  background-color: $color-page-bg;
+  border: 2rpx dashed #d1d5db;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-.add-icon { font-size: 40rpx; color: #9CA3AF; margin-bottom: 8rpx; }
-.add-text { font-size: 24rpx; color: #6B7280; }
+.detail-page__add-icon {
+  font-size: 40rpx;
+  color: $color-hint;
+  margin-bottom: 8rpx;
+}
 
-.cert-upload-area { width: 100%; }
-.cert-upload-btn {
+.detail-page__add-text {
+  font-size: $font-size-caption;
+  color: $color-secondary;
+}
+
+.detail-page__cert-area {
+  width: 100%;
+}
+
+.detail-page__cert-upload {
   width: 100%;
   height: 120rpx;
 }
-.cert-file {
+
+.detail-page__cert-file {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24rpx 30rpx;
-  background: #F9FAFB;
-  border: 2rpx solid #E5E7EB;
-  border-radius: 4rpx;
+  padding: $space-md $space-lg;
+  background: $color-page-bg;
+  border: 2rpx solid $color-border;
+  border-radius: $radius-sm;
 }
-.cert-name {
+
+.detail-page__cert-name {
   flex: 1;
-  font-size: 28rpx;
-  color: #2563EB;
+  font-size: $font-size-body;
+  color: $color-primary;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cert-delete {
+
+.detail-page__cert-delete {
   position: static;
   flex-shrink: 0;
-  margin-left: 16rpx;
+  margin-left: $space-sm;
 }
 
-.readonly-video-list { width: 100%; }
-.readonly-video-item {
+.detail-page__readonly-list {
+  width: 100%;
+}
+
+.detail-page__readonly-item {
   display: block;
-  padding: 20rpx 0;
-  font-size: 28rpx;
-  color: #374151;
-  border-bottom: 2rpx solid #F3F4F6;
+  padding: $space-sm 0;
+  font-size: $font-size-body;
+  color: $color-body;
+  border-bottom: 2rpx solid #f3f4f6;
 }
 
-.btn-primary {
-  background-color: #2563EB;
-  color: #FFFFFF;
-  font-size: 32rpx;
-  font-weight: 500;
-  height: 96rpx;
-  line-height: 96rpx;
-  border-radius: 8rpx;
+.detail-page__readonly-box {
+  background-color: $color-page-bg;
+  padding: $space-lg;
+  border: 2rpx solid $color-border;
+  border-radius: $radius-sm;
+  width: 100%;
+  box-sizing: border-box;
+  color: $color-body;
+  font-size: $font-size-body;
+  line-height: 1.6;
 }
-
-.btn-primary::after { display: none; }
-.mt-40 { margin-top: 40rpx; }
-.mt-60 { margin-top: 60rpx; }
 </style>

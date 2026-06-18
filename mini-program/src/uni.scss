@@ -1,3 +1,5 @@
+@use '@/styles/tokens.scss' as *;
+
 /**
  * 这里是uni-app内置的常用样式变量
  *
@@ -15,26 +17,26 @@
 /* 颜色变量 */
 
 /* 行为相关颜色 */
-$uni-color-primary: #1890FF;
-$uni-color-success: #52C41A;
-$uni-color-warning: #FAAD14;
-$uni-color-error: #FF4D4F;
+$uni-color-primary: $color-primary;
+$uni-color-success: $color-success;
+$uni-color-warning: $color-warning;
+$uni-color-error: $color-error;
 
 /* 文字基本颜色 */
-$uni-text-color: #333333; // 基本色
+$uni-text-color: $color-body; // 基本色
 $uni-text-color-inverse: #ffffff; // 反色
-$uni-text-color-grey: #666666; // 辅助灰色，如加载更多的提示信息
-$uni-text-color-placeholder: #999999;
+$uni-text-color-grey: $color-secondary; // 辅助灰色，如加载更多的提示信息
+$uni-text-color-placeholder: $color-hint;
 $uni-text-color-disable: #c0c0c0;
 
 /* 背景颜色 */
 $uni-bg-color: #ffffff;
-$uni-bg-color-grey: #F4F6F8;
+$uni-bg-color-grey: $color-page-bg;
 $uni-bg-color-hover: #f1f1f1; // 点击状态颜色
 $uni-bg-color-mask: rgba(0, 0, 0, 0.4); // 遮罩颜色
 
 /* 边框颜色 */
-$uni-border-color: #E5E7EB;
+$uni-border-color: $color-border;
 
 /* 尺寸变量 */
 

@@ -1,185 +1,163 @@
 <template>
-  <view class="container">
-    <view class="header-section">
-      <text class="page-title">设置登录密码</text>
-      <text class="page-subtitle">首次登录须设置密码，设置后可使用「手机号 + 密码」登录机构端</text>
-    </view>
+  <view class="password-page">
+    <PageHeader :title="PASSWORD_COPY.setTitle" :subtitle="PASSWORD_COPY.setSubtitle" />
 
-    <view class="form-section">
-      <view class="input-group">
-        <text class="label">新密码</text>
-        <input
+    <LoadingState v-if="sessionChecking" fullscreen />
+
+    <view v-else class="password-page__body">
+      <FormSection title="密码信息">
+        <FormField
           v-model="form.newPassword"
-          class="input-field"
-          type="password"
-          placeholder="至少 6 位"
-          placeholder-class="ph-color"
+          :label="PASSWORD_COPY.newPassword"
+          :placeholder="PASSWORD_COPY.newPasswordPlaceholder"
+          password
+          required
+          :error="fieldErrors.newPassword"
         />
-      </view>
-      <view class="input-group">
-        <text class="label">确认密码</text>
-        <input
+        <FormField
           v-model="form.confirmPassword"
-          class="input-field"
-          type="password"
-          placeholder="再次输入新密码"
-          placeholder-class="ph-color"
+          :label="PASSWORD_COPY.confirmPassword"
+          :placeholder="PASSWORD_COPY.confirmPasswordPlaceholder"
+          password
+          required
+          :error="fieldErrors.confirmPassword"
         />
-      </view>
+      </FormSection>
 
-      <button class="submit-btn" :loading="loading" @click="handleSubmit">确认设置</button>
-      <view class="logout-link" @click="handleLogout">退出登录</view>
+      <view class="password-page__logout" @click="handleLogout">
+        <text class="password-page__logout-text">{{ PASSWORD_COPY.logoutLink }}</text>
+      </view>
     </view>
+
+    <view v-if="!sessionChecking" class="password-page__spacer" />
+
+    <SubmitBar
+      v-if="!sessionChecking"
+      fixed
+      :text="PASSWORD_COPY.setSubmit"
+      :loading="loading"
+      @submit="handleSubmit"
+    />
   </view>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from "vue";
-import { onShow } from "@dcloudio/uni-app";
-import { request } from "@/utils/request";
-import { useUserStore } from "@/store/modules/user";
-import { isAgencyUser } from "@/utils/role";
+import { reactive, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { setInitialPassword } from '@/api/user'
+import PageHeader from '@/components/common/PageHeader.vue'
+import LoadingState from '@/components/common/LoadingState.vue'
+import FormField from '@/components/form/FormField.vue'
+import FormSection from '@/components/form/FormSection.vue'
+import SubmitBar from '@/components/form/SubmitBar.vue'
+import { FEEDBACK_COPY, PASSWORD_COPY } from '@/constants/copy'
+import { ROUTES } from '@/constants/routes'
+import { fetchAndSetUserInfo } from '@/services/user-session'
+import { useUserStore } from '@/store/modules/user'
+import { showConfirm, showError, showSuccess } from '@/utils/feedback'
+import { reportError } from '@/utils/logger'
+import { isAgencyUser } from '@/utils/role'
+import { validateSetPasswordForm, type SetPasswordField } from '@/utils/validators'
 
-const userStore = useUserStore();
-const loading = ref(false);
+const userStore = useUserStore()
+const loading = ref(false)
+const sessionChecking = ref(true)
+const fieldErrors = reactive<Partial<Record<SetPasswordField, string>>>({})
+
 const form = reactive({
-  newPassword: "",
-  confirmPassword: "",
-});
+  newPassword: '',
+  confirmPassword: '',
+})
 
-onShow(async () => {
-  if (!userStore.token) {
-    uni.reLaunch({ url: "/pages/login/index" });
-    return;
+onLoad(() => {
+  checkSetPasswordSession()
+})
+
+async function checkSetPasswordSession() {
+  sessionChecking.value = true
+  try {
+    if (!userStore.token) {
+      uni.reLaunch({ url: ROUTES.AGENCY_LOGIN })
+      return
+    }
+    await fetchAndSetUserInfo()
+    if (!isAgencyUser(userStore.userInfo)) {
+      uni.reLaunch({ url: ROUTES.PATIENT_HOME })
+      return
+    }
+    if (!userStore.userInfo?.mustChangePassword) {
+      uni.reLaunch({ url: ROUTES.WORKBENCH })
+    }
+  } finally {
+    sessionChecking.value = false
   }
-  await userStore.fetchUserInfo();
-  if (!isAgencyUser(userStore.userInfo)) {
-    uni.reLaunch({ url: "/pages/patient/home" });
-    return;
-  }
-  if (!userStore.userInfo?.mustChangePassword) {
-    uni.reLaunch({ url: "/pages/index/index" });
-  }
-});
+}
+
+const clearFieldErrors = () => {
+  ;(Object.keys(fieldErrors) as SetPasswordField[]).forEach((key) => {
+    delete fieldErrors[key]
+  })
+}
 
 const handleSubmit = async () => {
-  const pwd = form.newPassword.trim();
-  const confirm = form.confirmPassword.trim();
-  if (pwd.length < 6) {
-    return uni.showToast({ title: "密码至少 6 位", icon: "none" });
-  }
-  if (pwd === "123456" || pwd === "wx123456") {
-    return uni.showToast({ title: "不能使用系统占位密码", icon: "none" });
-  }
-  if (pwd !== confirm) {
-    return uni.showToast({ title: "两次密码不一致", icon: "none" });
+  clearFieldErrors()
+  const result = validateSetPasswordForm(form)
+  if (!result.valid) {
+    const field = result.field
+    if (field) {
+      fieldErrors[field] = result.message ?? ''
+    }
+    showError(result.message || FEEDBACK_COPY.validationRequired)
+    return
   }
 
-  loading.value = true;
+  loading.value = true
   try {
-    await request("/user/setInitialPassword", "POST", { newPassword: pwd });
-    await userStore.fetchUserInfo();
-    uni.showToast({ title: "设置成功", icon: "success" });
-    setTimeout(() => {
-      uni.reLaunch({ url: "/pages/index/index" });
-    }, 800);
+    await setInitialPassword({ newPassword: form.newPassword.trim() })
+    await fetchAndSetUserInfo()
+    showSuccess(FEEDBACK_COPY.passwordSetSuccess)
+    uni.reLaunch({ url: ROUTES.WORKBENCH })
   } catch (e) {
-    console.error(e);
+    reportError(e, { scope: 'set_password' })
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
-const handleLogout = () => {
-  uni.showModal({
-    title: "提示",
-    content: "确定退出登录吗？",
-    confirmColor: "#2563EB",
-    success: (res) => {
-      if (res.confirm) {
-        userStore.logout();
-        uni.reLaunch({ url: "/pages/patient/home" });
-      }
-    },
-  });
-};
+const handleLogout = async () => {
+  const confirmed = await showConfirm({ content: FEEDBACK_COPY.logoutConfirm })
+  if (confirmed) {
+    userStore.logout()
+    uni.reLaunch({ url: ROUTES.PATIENT_HOME })
+  }
+}
 </script>
 
-<style scoped>
-.container {
+<style scoped lang="scss">
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.password-page {
+  @include page-background;
   min-height: 100vh;
-  background-color: #ffffff;
-  padding: 60rpx;
 }
 
-.header-section {
-  margin-top: 40rpx;
-  margin-bottom: 80rpx;
+.password-page__body {
+  padding: 0 $space-xl;
 }
 
-.page-title {
-  display: block;
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 16rpx;
-}
-
-.page-subtitle {
-  display: block;
-  font-size: 28rpx;
-  color: #6b7280;
-  line-height: 1.6;
-}
-
-.form-section {
-  width: 100%;
-}
-
-.input-group {
-  margin-bottom: 60rpx;
-}
-
-.label {
-  display: block;
-  font-size: 28rpx;
-  color: #374151;
-  font-weight: 500;
-  margin-bottom: 20rpx;
-}
-
-.input-field {
-  width: 100%;
-  height: 80rpx;
-  font-size: 32rpx;
-  color: #111827;
-  border-bottom: 2rpx solid #e5e7eb;
-}
-
-.ph-color {
-  color: #9ca3af;
-  font-size: 30rpx;
-}
-
-.submit-btn {
-  margin-top: 80rpx;
-  background-color: #2563eb;
-  color: #ffffff;
-  font-size: 32rpx;
-  font-weight: 500;
-  height: 96rpx;
-  line-height: 96rpx;
-  border-radius: 8rpx;
-}
-
-.submit-btn::after {
-  border: none;
-}
-
-.logout-link {
-  margin-top: 40rpx;
+.password-page__logout {
+  margin-top: $space-xl;
+  padding: $space-md 0;
   text-align: center;
-  font-size: 28rpx;
-  color: #6b7280;
+}
+
+.password-page__logout-text {
+  font-size: $font-size-body;
+  color: $color-secondary;
+}
+
+.password-page__spacer {
+  height: calc(160rpx + env(safe-area-inset-bottom));
 }
 </style>

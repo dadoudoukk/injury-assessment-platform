@@ -1,236 +1,257 @@
 <template>
-  <view class="container">
-    <view class="header-section">
-      <text class="page-title">机构账号登录</text>
-      <text class="page-subtitle">审核通过后，可使用入驻手机号微信登录；已设密码的同事可用账号密码登录</text>
-    </view>
+  <view class="login-page">
+    <PageHeader :title="LOGIN_COPY.title" :subtitle="LOGIN_COPY.subtitle" />
 
-    <view class="form-section">
-      <button
-        class="wx-btn"
-        open-type="getPhoneNumber"
-        :loading="wxLoading"
-        @getphonenumber="onWxLogin"
-      >
-        微信授权登录
-      </button>
+    <LoadingState v-if="wxLoggingIn" fullscreen text="登录中..." />
 
-      <view class="divider">
-        <view class="divider-line"></view>
-        <text class="divider-text">或使用账号密码</text>
-        <view class="divider-line"></view>
+    <view v-else class="login-page__body">
+      <!-- 表单区独立层级，且不使用原生 button，避免与下方微信授权按钮抢触摸 -->
+      <view class="login-page__form">
+        <FormSection title="账号密码登录">
+          <view class="login-field">
+            <text class="login-field__label">{{ LOGIN_COPY.username }}</text>
+            <input
+              v-model="username"
+              class="login-field__input"
+              type="text"
+              :placeholder="LOGIN_COPY.usernamePlaceholder"
+              placeholder-class="login-field__placeholder"
+              :adjust-position="true"
+              :hold-keyboard="true"
+              confirm-type="next"
+            />
+          </view>
+          <view class="login-field">
+            <text class="login-field__label">{{ LOGIN_COPY.password }}</text>
+            <input
+              v-model="password"
+              class="login-field__input"
+              type="text"
+              password
+              :placeholder="LOGIN_COPY.passwordPlaceholder"
+              placeholder-class="login-field__placeholder"
+              :adjust-position="true"
+              :hold-keyboard="true"
+              confirm-type="done"
+              @confirm="handleLogin"
+            />
+          </view>
+        </FormSection>
+
+        <view
+          class="login-page__submit"
+          :class="{ 'login-page__submit--disabled': loading }"
+          @tap="handleLogin"
+        >
+          <text>{{ loading ? '登录中...' : LOGIN_COPY.submit }}</text>
+        </view>
       </view>
 
-      <view class="input-group">
-        <text class="label">账号</text>
-        <input
-          v-model="form.username"
-          class="input-field"
-          type="text"
-          placeholder="请输入手机号/账号"
-          placeholder-class="ph-color"
-        />
-      </view>
-      <view class="input-group">
-        <text class="label">密码</text>
-        <input
-          v-model="form.password"
-          class="input-field"
-          type="password"
-          placeholder="请输入密码"
-          placeholder-class="ph-color"
-        />
+      <view class="login-page__divider">
+        <view class="login-page__divider-line" />
+        <text class="login-page__divider-text">{{ LOGIN_COPY.divider }}</text>
+        <view class="login-page__divider-line" />
       </view>
 
-      <button class="submit-btn" :loading="loading" @click="handleLogin">登 录</button>
-
-      <view class="form-footer">
-        <text class="footer-text">忘记密码？请使用上方微信授权登录后重设密码</text>
+      <view class="login-page__wx-wrap">
+        <button
+          class="login-page__wx-btn"
+          hover-class="none"
+          open-type="getPhoneNumber"
+          @getphonenumber="onWxLogin"
+        >
+          {{ LOGIN_COPY.wxLogin }}
+        </button>
       </view>
+
+      <text class="login-page__footer">{{ LOGIN_COPY.footer }}</text>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from "vue";
-import { request } from "@/utils/request";
-import { useUserStore } from "@/store/modules/user";
-import { completeAgencyLogin } from "@/utils/agency-auth";
+import { ref } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { loginWithPassword, wxLoginAgency } from '@/api/auth'
+import PageHeader from '@/components/common/PageHeader.vue'
+import LoadingState from '@/components/common/LoadingState.vue'
+import FormSection from '@/components/form/FormSection.vue'
+import { LOGIN_COPY } from '@/constants/copy'
+import { useUserStore } from '@/store/modules/user'
+import { completeAgencyLogin } from '@/utils/agency-auth'
+import { showError } from '@/utils/feedback'
+import { reportError, trackPageView } from '@/utils/logger'
 
-const userStore = useUserStore();
-const loading = ref(false);
-const wxLoading = ref(false);
+const userStore = useUserStore()
+const loading = ref(false)
+const wxLoggingIn = ref(false)
+const username = ref('')
+const password = ref('')
 
-const form = reactive({
-  username: "",
-  password: "",
-});
+onLoad(() => {
+  trackPageView('login/index')
+})
 
-const onWxLogin = async (e: any) => {
-  if (e.detail.errMsg !== "getPhoneNumber:ok") {
-    uni.showToast({ title: "需要授权手机号才能登录", icon: "none" });
-    return;
+onShow(() => {
+  if (wxLoggingIn.value) return
+})
+
+const onWxLogin = async (e: { detail: { errMsg: string; code?: string } }) => {
+  if (e.detail.errMsg !== 'getPhoneNumber:ok') {
+    showError(LOGIN_COPY.phoneAuthRequired)
+    return
   }
+  if (wxLoggingIn.value) return
 
-  wxLoading.value = true;
+  wxLoggingIn.value = true
+  let redirected = false
   try {
-    userStore.logout();
-    const res = await request("/login/wx/agency", "POST", {
-      code: e.detail.code,
-      phone: "13800000000",
-    });
+    userStore.clearSession()
+    const res = await wxLoginAgency({ code: e.detail.code! })
     if (res?.access_token) {
-      uni.showToast({ title: "登录成功", icon: "success" });
-      setTimeout(() => {
-        completeAgencyLogin(res);
-      }, 500);
+      redirected = await completeAgencyLogin(res)
     }
   } catch (error) {
-    console.error("Wx agency login error:", error);
+    reportError(error, { scope: 'wx_agency_login' })
   } finally {
-    wxLoading.value = false;
+    if (!redirected) {
+      wxLoggingIn.value = false
+    }
   }
-};
+}
 
 const handleLogin = async () => {
-  if (!form.username.trim()) {
-    return uni.showToast({ title: "请输入账号", icon: "none" });
+  if (loading.value) return
+  if (!username.value.trim()) {
+    return showError('请输入账号')
   }
-  if (!form.password.trim()) {
-    return uni.showToast({ title: "请输入密码", icon: "none" });
+  if (!password.value.trim()) {
+    return showError('请输入密码')
   }
 
-  loading.value = true;
+  loading.value = true
+  let redirected = false
   try {
-    userStore.logout();
-    const res = await request("/login", "POST", form);
+    userStore.clearSession()
+    const res = await loginWithPassword({
+      username: username.value.trim(),
+      password: password.value,
+    })
     if (res?.access_token) {
-      uni.showToast({ title: "登录成功", icon: "success" });
-      setTimeout(() => {
-        completeAgencyLogin(res);
-      }, 500);
+      redirected = await completeAgencyLogin(res)
     }
   } catch (error) {
-    console.error("Login error:", error);
+    reportError(error, { scope: 'password_login' })
   } finally {
-    loading.value = false;
+    if (!redirected) {
+      loading.value = false
+    }
   }
-};
+}
 </script>
 
-<style scoped>
-.container {
+<style scoped lang="scss">
+@import '@/styles/tokens.scss';
+@import '@/styles/mixins.scss';
+
+.login-page {
+  @include page-background;
   min-height: 100vh;
-  background-color: #ffffff;
-  padding: 60rpx;
 }
 
-.header-section {
-  margin-top: 40rpx;
-  margin-bottom: 60rpx;
+.login-page__body {
+  padding: 0 $space-3xl $space-3xl;
 }
 
-.page-title {
+.login-page__form {
+  position: relative;
+  z-index: 10;
+}
+
+.login-field {
+  margin-bottom: $space-lg;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.login-field__label {
   display: block;
-  font-size: 48rpx;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 16rpx;
+  font-size: $font-size-body;
+  color: $color-body;
+  font-weight: 500;
+  margin-bottom: $space-sm;
 }
 
-.page-subtitle {
+.login-field__input {
+  @include input-container;
   display: block;
-  font-size: 28rpx;
-  color: #6b7280;
-  line-height: 1.6;
-}
-
-.form-section {
   width: 100%;
+  height: 80rpx;
+  line-height: 80rpx;
 }
 
-.wx-btn {
+.login-field__placeholder {
+  color: $color-hint;
+}
+
+.login-page__submit {
+  @include primary-button;
+  margin-top: $space-xl;
+  text-align: center;
+
+  &--disabled {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+}
+
+.login-page__wx-wrap {
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.login-page__wx-btn {
   background-color: #07c160;
   color: #ffffff;
   font-size: 32rpx;
   font-weight: 500;
   height: 96rpx;
   line-height: 96rpx;
-  border-radius: 8rpx;
+  border-radius: $radius-sm;
+
+  &::after {
+    border: none;
+  }
 }
 
-.wx-btn::after {
-  border: none;
-}
-
-.divider {
+.login-page__divider {
   display: flex;
   align-items: center;
-  margin: 48rpx 0;
-  gap: 20rpx;
+  margin: $space-2xl 0;
+  gap: $space-md;
 }
 
-.divider-line {
+.login-page__divider-line {
   flex: 1;
   height: 2rpx;
-  background-color: #e5e7eb;
+  background-color: $color-border;
 }
 
-.divider-text {
-  font-size: 24rpx;
-  color: #9ca3af;
+.login-page__divider-text {
+  font-size: $font-size-caption;
+  color: $color-hint;
   flex-shrink: 0;
 }
 
-.input-group {
-  margin-bottom: 60rpx;
-}
-
-.label {
+.login-page__footer {
   display: block;
-  font-size: 28rpx;
-  color: #374151;
-  font-weight: 500;
-  margin-bottom: 20rpx;
-}
-
-.input-field {
-  width: 100%;
-  height: 80rpx;
-  font-size: 32rpx;
-  color: #111827;
-  border-bottom: 2rpx solid #e5e7eb;
-}
-
-.ph-color {
-  color: #9ca3af;
-  font-size: 30rpx;
-}
-
-.submit-btn {
-  margin-top: 20rpx;
-  background-color: #2563eb;
-  color: #ffffff;
-  font-size: 32rpx;
-  font-weight: 500;
-  height: 96rpx;
-  line-height: 96rpx;
-  border-radius: 8rpx;
-  letter-spacing: 2rpx;
-}
-
-.submit-btn::after {
-  border: none;
-}
-
-.form-footer {
-  margin-top: 40rpx;
+  margin-top: $space-xl;
   text-align: center;
-}
-
-.footer-text {
   font-size: 26rpx;
-  color: #9ca3af;
+  color: $color-hint;
   line-height: 1.5;
 }
 </style>
