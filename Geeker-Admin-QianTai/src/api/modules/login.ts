@@ -23,11 +23,16 @@ export const getAuthMenuListApi = () => {
   return authMenuList;
 };
 
-// 获取按钮权限
+// 获取按钮权限（按页面 name 分组）
 export const getAuthButtonListApi = () => {
   return http.get<Login.ResAuthButtons>(PORT1 + `/auth/buttons`, {}, { loading: false });
   // 如果想让按钮权限变为本地数据，注释上一行代码，并引入本地 authButtonList.json 数据
   return authButtonList;
+};
+
+// 获取扁平按钮权限码
+export const getAuthButtonCodesApi = () => {
+  return http.get<string[]>(PORT1 + `/auth/buttonList`, {}, { loading: false });
 };
 
 // 获取当前登录用户信息

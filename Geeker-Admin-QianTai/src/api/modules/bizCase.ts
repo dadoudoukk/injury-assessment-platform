@@ -43,6 +43,10 @@ export interface CaseRecordRow {
   appraisalVideos?: AppraisalVideoItem[] | null;
   documentNumber?: string | null;
   electronicCertificate?: ElectronicCertificateItem | null;
+  /** status=6 时 pending 审核记录 ID（列表/详情摘要） */
+  pendingAgencySubmitAuditId?: string | null;
+  /** 文书字段来源：main | pending_payload | hidden | legacy_main */
+  documentFieldsSource?: string | null;
   appraisalSubmittedAt?: string | null;
   appraisalSubmittedBy?: number | null;
   reworkRemark?: string | null;
@@ -127,6 +131,7 @@ export interface CaseStatsData {
   pending?: number;
   accepted?: number;
   inProgress?: number;
+  reportPendingAudit?: number;
   completed?: number;
   rework?: number;
   agencyCount?: number;
@@ -148,7 +153,8 @@ export const CASE_STATUS = {
   ACCEPTED: 2,
   APPRAISING: 3,
   COMPLETED: 4,
-  REWORK: 5
+  REWORK: 5,
+  REPORT_PENDING_AUDIT: 6
 } as const;
 
 export const CASE_STATUS_OPTIONS = [
@@ -156,7 +162,8 @@ export const CASE_STATUS_OPTIONS = [
   { label: "已受理", value: CASE_STATUS.ACCEPTED },
   { label: "鉴定中", value: CASE_STATUS.APPRAISING },
   { label: "已完成", value: CASE_STATUS.COMPLETED },
-  { label: "已打回", value: CASE_STATUS.REWORK }
+  { label: "已打回", value: CASE_STATUS.REWORK },
+  { label: "报告待平台审核", value: CASE_STATUS.REPORT_PENDING_AUDIT }
 ];
 
 export const CASE_STATUS_MAP: Record<number, { label: string; tagType: string }> = {
@@ -164,5 +171,6 @@ export const CASE_STATUS_MAP: Record<number, { label: string; tagType: string }>
   [CASE_STATUS.ACCEPTED]: { label: "已受理", tagType: "" },
   [CASE_STATUS.APPRAISING]: { label: "鉴定中", tagType: "primary" },
   [CASE_STATUS.COMPLETED]: { label: "已完成", tagType: "success" },
-  [CASE_STATUS.REWORK]: { label: "已打回", tagType: "danger" }
+  [CASE_STATUS.REWORK]: { label: "已打回", tagType: "danger" },
+  [CASE_STATUS.REPORT_PENDING_AUDIT]: { label: "报告待平台审核", tagType: "warning" }
 };

@@ -1,5 +1,7 @@
 import type { AgencyRegisterBody, CaseCreateBody } from '@/types/case'
+import type { UploadedFileItem } from '@/composables/useFileUpload'
 import { PASSWORD_COPY } from '@/constants/copy'
+import { buildMaterialAttachments } from '@/utils/attachment'
 
 export interface ValidationResult<T extends string = keyof CaseCreateBody> {
   valid: boolean
@@ -52,7 +54,49 @@ export function validateCaseForm(form: CaseCreateBody): ValidationResult {
     return { valid: false, message: '请输入承保保险公司', field: 'insuranceCompany' }
   }
 
+  const policyCount = form.policyImages?.length || 0
+  if (policyCount < 1) {
+    return { valid: false, message: '请至少上传 1 张保单图片', field: 'policyImages' as keyof CaseCreateBody }
+  }
+
   return { valid: true }
+}
+
+export function validateCaseMaterials(
+  policyImages: UploadedFileItem[],
+  accidentDecisionImages: UploadedFileItem[] = [],
+): ValidationResult {
+  if (policyImages.length < 1) {
+    return { valid: false, message: '请至少上传 1 张保单图片' }
+  }
+  const all = [...policyImages, ...accidentDecisionImages]
+  for (const file of all) {
+    if (file.kind && file.kind !== 'image') {
+      return { valid: false, message: '案件材料仅支持图片' }
+    }
+  }
+  return { valid: true }
+}
+
+export function buildCaseCreatePayload(form: CaseCreateBody) {
+  const policyImages = (form.policyImages || []).map(({ name, url, kind }) => ({
+    name,
+    url,
+    kind: kind || 'image',
+    category: 'policy' as const,
+  }))
+  const accidentDecisionImages = (form.accidentDecisionImages || []).map(({ name, url, kind }) => ({
+    name,
+    url,
+    kind: kind || 'image',
+    category: 'accident_decision' as const,
+  }))
+  return {
+    ...form,
+    policyImages,
+    accidentDecisionImages,
+    attachments: buildMaterialAttachments(policyImages, accidentDecisionImages),
+  }
 }
 
 export function validateAgencyRegisterForm(

@@ -1,12 +1,28 @@
 <template>
   <div v-waterMarker="waterMarkerConfig" class="table-box">
-    <ProTable ref="proTable" :columns="columns" :request-api="getTableList" :data-callback="dataCallback">
+    <ProTable
+      ref="proTable"
+      :columns="columns"
+      :request-api="getTableList"
+      :data-callback="dataCallback"
+      :init-param="tableInitParam"
+    >
       <template #tableHeader="{ selectedListIds }">
         <el-button v-auth="'user:add'" type="primary" :icon="CirclePlus" @click="openAdd">新增用户</el-button>
-        <el-button v-auth="'user:export'" type="primary" plain :icon="Download" :loading="exportLoading" @click="exportList">
+        <el-button
+          v-if="!isAgencyAccountPage"
+          v-auth="'user:export'"
+          type="primary"
+          plain
+          :icon="Download"
+          :loading="exportLoading"
+          @click="exportList"
+        >
           导出 Excel
         </el-button>
-        <el-button v-auth="'user:import'" type="primary" plain :icon="Upload" @click="batchImport">批量导入</el-button>
+        <el-button v-if="!isAgencyAccountPage" v-auth="'user:import'" type="primary" plain :icon="Upload" @click="batchImport">
+          批量导入
+        </el-button>
         <el-button
           v-auth="'user:delete'"
           type="danger"
@@ -64,6 +80,11 @@
             <el-option v-for="item in roleOptions" :key="item.id" :label="item.roleName" :value="item.id" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="isAgencyAccountPage" label="所属机构" prop="agencyId">
+          <el-select v-model="addForm.agencyId" placeholder="请选择鉴定机构" filterable clearable style="width: 100%">
+            <el-option v-for="item in agencyOptions" :key="item.id" :label="item.agencyName" :value="item.id" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="addVisible = false">取消</el-button>
@@ -77,6 +98,7 @@
 
 <script setup lang="tsx" name="accountManage">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 import { CirclePlus, Delete, Download, EditPen, Upload } from "@element-plus/icons-vue";
 import { ElMessage, FormInstance } from "element-plus";
 import type { FormRules } from "element-plus";
@@ -100,6 +122,11 @@ import { useHandleData } from "@/hooks/useHandleData";
 import { cleanExportParams } from "@/utils";
 import ImportExcel from "@/components/ImportExcel/index.vue";
 import { useUserStore } from "@/stores/modules/user";
+import { getAgencyOptions, type AgencyOption } from "@/api/modules/bizAgency";
+
+const route = useRoute();
+const isAgencyAccountPage = computed(() => route.name === "agencyAccount");
+const tableInitParam = computed(() => (isAgencyAccountPage.value ? { agencyOnly: 1 } : {}));
 
 const proTable = ref<ProTableInstance>();
 const userStore = useUserStore();
@@ -109,6 +136,7 @@ const addFormRef = ref<FormInstance>();
 const importRef = ref<InstanceType<typeof ImportExcel> | null>(null);
 const sexDictOptions = ref<DictOption[]>([]);
 const roleOptions = ref<RoleOption[]>([]);
+const agencyOptions = ref<AgencyOption[]>([]);
 const exportLoading = ref(false);
 const waterMarkerConfig = computed(() => ({
   text: userStore.userInfo?.name || "当前用户",
@@ -123,18 +151,24 @@ const addForm = reactive({
   email: "",
   phone: "",
   gender: "3",
-  roleIds: [] as number[]
+  roleIds: [] as number[],
+  agencyId: "" as string | number | ""
 });
 
 onMounted(async () => {
   const [sexRes, roleRes] = await Promise.all([getDictByCode("sys_user_sex"), getAllRoleList()]);
   sexDictOptions.value = sexRes.data;
   roleOptions.value = roleRes.data || [];
+  if (isAgencyAccountPage.value) {
+    const agencyRes = await getAgencyOptions();
+    agencyOptions.value = agencyRes.data.list || [];
+  }
 });
 
 const formRules = computed<FormRules>(() => ({
   username: [{ required: true, message: "请输入账号", trigger: "blur" }],
-  password: isEdit.value ? [] : [{ required: true, message: "请输入密码", trigger: "blur" }]
+  password: isEdit.value ? [] : [{ required: true, message: "请输入密码", trigger: "blur" }],
+  agencyId: isAgencyAccountPage.value ? [{ required: true, message: "请选择所属机构", trigger: "change" }] : []
 }));
 
 const dataCallback = (data: any) => ({
@@ -144,7 +178,14 @@ const dataCallback = (data: any) => ({
 
 const getTableList = (params: any) => getUserList(JSON.parse(JSON.stringify(params)));
 const getExportParams = () => {
-  return cleanExportParams(JSON.parse(JSON.stringify(proTable.value?.searchParam || {})));
+  return cleanExportParams(
+    JSON.parse(
+      JSON.stringify({
+        ...(proTable.value?.searchParam || {}),
+        ...tableInitParam.value
+      })
+    )
+  );
 };
 
 const exportList = async () => {
@@ -181,6 +222,8 @@ const openEdit = (row: User.ResUserList) => {
   addForm.phone = (row as User.ResUserList & { phone?: string }).phone || "";
   addForm.gender = row.gender != null && row.gender !== "" ? String(row.gender) : "3";
   addForm.roleIds = Array.isArray(row.roleIds) ? row.roleIds.map(id => Number(id)) : [];
+  const rowAgencyId = (row as User.ResUserList & { agencyId?: number | null }).agencyId;
+  addForm.agencyId = rowAgencyId != null && rowAgencyId !== "" ? String(rowAgencyId) : "";
   addVisible.value = true;
 };
 
@@ -193,6 +236,7 @@ const resetAddForm = () => {
   addForm.phone = "";
   addForm.gender = "3";
   addForm.roleIds = [];
+  addForm.agencyId = "";
   isEdit.value = false;
   addFormRef.value?.clearValidate();
 };
@@ -201,6 +245,7 @@ const submitForm = () => {
   addFormRef.value?.validate(async valid => {
     if (!valid) return;
     try {
+      const agencyId = isAgencyAccountPage.value && addForm.agencyId !== "" ? Number(addForm.agencyId) : undefined;
       if (isEdit.value) {
         const res = await editUser({
           id: addForm.id,
@@ -209,7 +254,8 @@ const submitForm = () => {
           email: addForm.email,
           phone: addForm.phone,
           gender: addForm.gender || "3",
-          roleIds: addForm.roleIds
+          roleIds: addForm.roleIds,
+          agencyId
         });
         ElMessage.success({ message: res.msg || "编辑成功" });
       } else {
@@ -220,7 +266,8 @@ const submitForm = () => {
           email: addForm.email || undefined,
           phone: addForm.phone || undefined,
           gender: addForm.gender || "3",
-          roleIds: addForm.roleIds
+          roleIds: addForm.roleIds,
+          agencyId
         });
         ElMessage.success({ message: res.msg || "新增成功" });
       }
@@ -255,70 +302,93 @@ const batchDelete = async (ids: string[]) => {
   proTable.value?.getTableList();
 };
 
-const columns = reactive<ColumnProps<User.ResUserList>[]>([
-  { type: "selection", fixed: "left", width: 50 },
-  { type: "index", label: "#", width: 60 },
-  {
-    prop: "username",
-    label: "账号",
-    search: { el: "input" }
-  },
-  {
-    prop: "gender",
-    label: "性别",
-    width: 100,
-    enum: sexDictOptions,
-    fieldNames: { label: "label", value: "value" },
-    search: { el: "select" },
-    render: scope => {
-      const gv = String(scope.row.gender ?? "");
-      const item = sexDictOptions.value.find(opt => String(opt.value) === gv);
-      if (!item) return "--";
-      return <el-tag size="small">{item.label}</el-tag>;
-    }
-  },
-  {
-    prop: "roleNames",
-    label: "所属角色",
-    minWidth: 220,
-    isFilterEnum: false,
-    render: scope => {
-      const names = Array.isArray(scope.row.roleNames) ? scope.row.roleNames.filter(Boolean) : [];
-      if (!names.length) return "--";
-      return (
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          {names.map((name: string) => (
-            <el-tag key={name} size="small">
-              {name}
-            </el-tag>
-          ))}
-        </div>
-      );
-    }
-  },
-  {
-    prop: "status",
-    label: "状态",
-    width: 100,
-    render: scope => (
-      <el-switch
-        model-value={scope.row.status}
-        active-value={1}
-        inactive-value={0}
-        beforeChange={() => handleStatusBeforeChange(scope.row)}
-      />
-    )
-  },
-  {
-    prop: "createTime",
-    label: "创建时间",
-    width: 180
-  },
-  {
-    prop: "email",
-    label: "邮箱",
-    width: 200
-  },
-  { prop: "operation", label: "操作", fixed: "right", width: 180 }
-]);
+const agencySearchEnum = computed(() =>
+  agencyOptions.value.map(item => ({
+    label: item.agencyName,
+    value: Number(item.id)
+  }))
+);
+
+const columns = computed<ColumnProps<User.ResUserList>[]>(() => {
+  const base: ColumnProps<User.ResUserList>[] = [
+    { type: "selection", fixed: "left", width: 50 },
+    { type: "index", label: "#", width: 60 },
+    {
+      prop: "username",
+      label: "账号",
+      search: { el: "input" }
+    },
+    {
+      prop: "gender",
+      label: "性别",
+      width: 100,
+      enum: sexDictOptions,
+      fieldNames: { label: "label", value: "value" },
+      search: { el: "select" },
+      render: scope => {
+        const gv = String(scope.row.gender ?? "");
+        const item = sexDictOptions.value.find(opt => String(opt.value) === gv);
+        if (!item) return "--";
+        return <el-tag size="small">{item.label}</el-tag>;
+      }
+    },
+    {
+      prop: "roleNames",
+      label: "所属角色",
+      minWidth: 220,
+      isFilterEnum: false,
+      render: scope => {
+        const names = Array.isArray(scope.row.roleNames) ? scope.row.roleNames.filter(Boolean) : [];
+        if (!names.length) return "--";
+        return (
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            {names.map((name: string) => (
+              <el-tag key={name} size="small">
+                {name}
+              </el-tag>
+            ))}
+          </div>
+        );
+      }
+    },
+    {
+      prop: "status",
+      label: "状态",
+      width: 100,
+      render: scope => (
+        <el-switch
+          model-value={scope.row.status}
+          active-value={1}
+          inactive-value={0}
+          beforeChange={() => handleStatusBeforeChange(scope.row)}
+        />
+      )
+    },
+    {
+      prop: "createTime",
+      label: "创建时间",
+      width: 180
+    },
+    {
+      prop: "email",
+      label: "邮箱",
+      width: 200
+    },
+    { prop: "operation", label: "操作", fixed: "right", width: 180 }
+  ];
+
+  if (isAgencyAccountPage.value) {
+    base.splice(3, 0, {
+      prop: "agencyId",
+      label: "所属机构",
+      minWidth: 140,
+      isFilterEnum: false,
+      enum: agencySearchEnum,
+      search: { el: "select", props: { placeholder: "请选择机构", filterable: true, clearable: true } },
+      render: scope => (scope.row as User.ResUserList & { agencyName?: string }).agencyName || "--"
+    });
+  }
+
+  return base;
+});
 </script>

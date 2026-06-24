@@ -1,3 +1,11 @@
+"""
+增量角色菜单脚本：仅为 patient / jigou / insurance 补基础授权。
+
+注意：
+- 本脚本不是完整权限基线，不会处理审核中心（auditCenter）相关菜单。
+- 审核中心仅 admin 可见，由 phase2_menu_audit.sql / init_db.ensure_phase2_* 维护。
+- 重复执行只会追加缺失的 sys_role_menu，不会收回误授权；修正审核误授权请跑 phase2 迁移。
+"""
 import pymysql
 
 conn = pymysql.connect(
@@ -43,14 +51,14 @@ insurance_role_id = ensure_role('insurance', '保险公司人员', '保险公司
 
 # Assign menus for Patient
 # Patients need to view case management and add cases.
-# They might need home_index as well.
-assign_menus(patient_role_id, ['home_index', 'business', 'caseManage', 'case:add'])
+# They might need home as well.
+assign_menus(patient_role_id, ['home', 'caseCenter', 'caseManage', 'case:add'])
 
 # Assign menus for Jigou (Appraisal Agency)
-assign_menus(jigou_role_id, ['home_index', 'business', 'caseManage', 'case:edit', 'case:appraisal'])
+assign_menus(jigou_role_id, ['home', 'caseCenter', 'caseManage', 'case:edit', 'case:appraisal'])
 
 # Assign menus for Insurance
-assign_menus(insurance_role_id, ['home_index', 'business', 'caseManage'])
+assign_menus(insurance_role_id, ['home', 'caseCenter', 'caseManage'])
 
 conn.commit()
 print("Permissions configured successfully!")

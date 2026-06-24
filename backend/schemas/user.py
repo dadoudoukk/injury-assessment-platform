@@ -8,11 +8,15 @@ class UserListBody(BaseModel):
     pageSize: int = Field(10, ge=1, le=200, description="每页条数")
     username: Optional[str] = Field(None, description="账号模糊搜索")
     gender: Optional[str] = Field(None, description="性别字典值，如 1/2/3")
+    agencyId: Optional[int] = Field(None, description="所属鉴定机构 ID（精确匹配）")
+    agencyOnly: Optional[int] = Field(None, description="1=仅查已绑定机构的账号")
 
 
 class UserExportBody(BaseModel):
     username: Optional[str] = Field(None, description="账号模糊搜索")
     gender: Optional[str] = Field(None, description="性别字典值，如 1/2/3")
+    agencyId: Optional[int] = Field(None, description="所属鉴定机构 ID（精确匹配）")
+    agencyOnly: Optional[int] = Field(None, description="1=仅查已绑定机构的账号")
 
 
 class UserAddBody(BaseModel):

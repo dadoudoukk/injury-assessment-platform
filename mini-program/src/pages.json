@@ -26,7 +26,24 @@
     {
       "path": "pages/patient/list",
       "style": {
-        "navigationBarTitleText": "我的案件",
+        "navigationBarTitleText": "我的报案",
+        "enablePullDownRefresh": true,
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/patient/application-detail",
+      "style": {
+        "navigationBarTitleText": "申请详情",
+        "navigationBarBackgroundColor": "#FFFFFF",
+        "navigationBarTextStyle": "black"
+      }
+    },
+    {
+      "path": "pages/patient/resubmit",
+      "style": {
+        "navigationBarTitleText": "补件再提交",
         "navigationBarBackgroundColor": "#FFFFFF",
         "navigationBarTextStyle": "black"
       }

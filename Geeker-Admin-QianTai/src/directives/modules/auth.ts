@@ -10,11 +10,15 @@ const auth: Directive = {
     const { value } = binding;
     const authStore = useAuthStore();
     const currentPageRoles = authStore.authButtonListGet[authStore.routeName] ?? [];
+    const globalCodes = authStore.authButtonCodesGet ?? [];
+
+    const hasCode = (code: string) => currentPageRoles.includes(code) || globalCodes.includes(code);
+
     if (value instanceof Array && value.length) {
-      const hasPermission = value.every(item => currentPageRoles.includes(item));
+      const hasPermission = value.every(item => hasCode(item));
       if (!hasPermission) el.remove();
     } else {
-      if (!currentPageRoles.includes(value)) el.remove();
+      if (!hasCode(value)) el.remove();
     }
   }
 };

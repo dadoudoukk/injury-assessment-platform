@@ -1,6 +1,33 @@
 <template>
   <div class="table-box">
-    <ProTable ref="typeTableRef" :columns="typeColumns" :request-api="getDictTypeTableList" :data-callback="dataCallback">
+    <template v-if="isShortcutMode">
+      <div class="shortcut-header">{{ shortcutTitle }}</div>
+      <ProTable ref="dataTableRef" :columns="dataColumns" :request-api="getDictDataTableList" :data-callback="dataCallback">
+        <template #tableHeader="{ selectedListIds }">
+          <el-button v-auth="'dictData:add'" type="primary" :icon="CirclePlus" @click="openDataAdd">新增字典数据</el-button>
+          <el-button
+            v-auth="'dictData:delete'"
+            type="danger"
+            :icon="Delete"
+            plain
+            :disabled="!selectedListIds?.length"
+            @click="batchDeleteData(selectedListIds)"
+          >
+            批量删除
+          </el-button>
+        </template>
+        <template #operation="scope">
+          <el-button v-auth="'dictData:edit'" type="primary" link :icon="EditPen" @click="openDataEdit(scope.row)">
+            编辑
+          </el-button>
+          <el-button v-auth="'dictData:delete'" type="danger" link :icon="Delete" @click="deleteDataOne(scope.row)">
+            删除
+          </el-button>
+        </template>
+      </ProTable>
+    </template>
+
+    <ProTable v-else ref="typeTableRef" :columns="typeColumns" :request-api="getDictTypeTableList" :data-callback="dataCallback">
       <template #tableHeader="{ selectedListIds }">
         <el-button v-auth="'dictType:add'" type="primary" :icon="CirclePlus" @click="openTypeAdd">新增字典类型</el-button>
         <el-button
@@ -123,7 +150,8 @@
 </template>
 
 <script setup lang="tsx" name="dictManage">
-import { computed, nextTick, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 import { CirclePlus, Delete, EditPen, Setting } from "@element-plus/icons-vue";
 import { ElMessage, FormInstance } from "element-plus";
 import type { FormRules } from "element-plus";
@@ -144,6 +172,26 @@ import {
   type DictTypeRow
 } from "@/api/modules/dict";
 import { useHandleData } from "@/hooks/useHandleData";
+
+const SHORTCUT_DICT_BY_ROUTE: Record<string, { code: string; title: string }> = {
+  accidentTypeDict: { code: "biz_accident_type", title: "事故类型" },
+  injuryTypeDict: { code: "biz_injury_type", title: "伤情类型" }
+};
+
+const route = useRoute();
+
+const shortcutMeta = computed(() => {
+  const fromRoute = route.name ? SHORTCUT_DICT_BY_ROUTE[String(route.name)] : undefined;
+  if (fromRoute) return fromRoute;
+  const dictCode = typeof route.query.dictCode === "string" ? route.query.dictCode.trim() : "";
+  if (dictCode) {
+    return { code: dictCode, title: dictCode };
+  }
+  return null;
+});
+
+const isShortcutMode = computed(() => !!shortcutMeta.value);
+const shortcutTitle = computed(() => shortcutMeta.value?.title || "字典数据");
 
 const typeTableRef = ref<ProTableInstance>();
 const typeDialogVisible = ref(false);
@@ -456,4 +504,21 @@ const dataColumns = reactive<ColumnProps<DictDataRow>[]>([
   },
   { prop: "operation", label: "操作", fixed: "right", width: 180 }
 ]);
+
+onMounted(async () => {
+  if (!shortcutMeta.value) return;
+  currentDictCode.value = shortcutMeta.value.code;
+  currentDictName.value = shortcutMeta.value.title;
+  await nextTick();
+  dataTableRef.value?.getTableList();
+});
 </script>
+
+<style scoped lang="scss">
+.shortcut-header {
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+</style>

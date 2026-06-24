@@ -41,6 +41,7 @@ export const editUser = (params: {
   phone?: string;
   gender?: string;
   roleIds?: number[];
+  agencyId?: number | null;
 }) => {
   return http.post(PORT1 + `/user/edit`, params);
 };

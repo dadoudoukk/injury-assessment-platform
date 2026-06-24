@@ -24,7 +24,7 @@ if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
 from passlib.context import CryptContext
-from sqlalchemy import select
+from sqlalchemy import false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -242,7 +242,7 @@ def ensure_menu_api_path_prefix_seed(session: Session) -> None:
         ("fragmentManage", "/api/biz/fragment"),
         ("newsCategory", "/api/biz/newsCategory"),
         ("newsArticle", "/api/biz/newsArticle"),
-        ("home_index", "/api/biz/home"),
+        ("home", "/api/biz/home"),
     ]
     updated = 0
     for name, prefix in mapping:
@@ -611,35 +611,932 @@ def ensure_button_menus_under_parent(
     print(f"[按钮权限]「{parent_menu_name}」已同步 {len(definitions)} 个按钮（本批新建 {created} 个）。")
 
 
-def ensure_business_manage_menu(session: Session) -> None:
-    """「业务管理」目录；不存在则创建并授权 admin。"""
-    parent = session.query(SysMenu).filter(SysMenu.name == "business").first()
-    if not parent:
-        parent = SysMenu(
+def _ensure_catalog_menu(
+    session: Session,
+    *,
+    name: str,
+    title: str,
+    path: str,
+    icon: str,
+    sort: int,
+) -> SysMenu:
+    """创建或获取一级 CATALOG 菜单。"""
+    row = session.query(SysMenu).filter(SysMenu.name == name, SysMenu.is_delete == 0).first()
+    if not row:
+        row = SysMenu(
             parent_id=None,
             menu_type="CATALOG",
-            name="business",
-            title="业务管理",
-            path="/business",
-            icon="Grid",
-            sort=4,
+            name=name,
+            title=title,
+            path=path,
+            icon=icon,
+            sort=sort,
         )
-        session.add(parent)
+        session.add(row)
         session.flush()
+    else:
+        row.title = title
+        row.path = path
+        row.icon = icon or row.icon
+        row.sort = sort
+    role = session.query(SysRole).filter(SysRole.code == "admin", SysRole.is_delete == 0).first()
+    if role and row not in role.menus:
+        role.menus.append(row)
+    return row
 
-    role = session.query(SysRole).filter(SysRole.code == "admin").first()
-    if role and parent not in role.menus:
-        role.menus.append(parent)
+
+def _merge_home_menu_names(session: Session) -> None:
+    """
+    统一首页菜单 name=home，处理 home_index 与 home 并存或重复 home 行。
+    保留 id 最小的一条 live home 作为 canonical。
+    """
+    live_homes = (
+        session.query(SysMenu)
+        .filter(SysMenu.name == "home", SysMenu.is_delete == 0)
+        .order_by(SysMenu.id.asc())
+        .all()
+    )
+    legacy_rows = (
+        session.query(SysMenu)
+        .filter(SysMenu.name == "home_index", SysMenu.is_delete == 0)
+        .order_by(SysMenu.id.asc())
+        .all()
+    )
+
+    canonical: Optional[SysMenu] = live_homes[0] if live_homes else None
+
+    if canonical is None and legacy_rows:
+        canonical = legacy_rows[0]
+        canonical.name = "home"
+        legacy_rows = legacy_rows[1:]
+
+    if canonical is None:
+        return
+
+    def _rebind_role_menus(from_menu_id: int, to_menu_id: int) -> None:
+        role_ids = [
+            rid
+            for (rid,) in session.query(SysRoleMenu.role_id)
+            .filter(SysRoleMenu.menu_id == from_menu_id)
+            .distinct()
+            .all()
+        ]
+        for role_id in role_ids:
+            exists = (
+                session.query(SysRoleMenu)
+                .filter(SysRoleMenu.role_id == role_id, SysRoleMenu.menu_id == to_menu_id)
+                .first()
+            )
+            if not exists:
+                session.add(SysRoleMenu(role_id=role_id, menu_id=to_menu_id))
+
+    for legacy in legacy_rows:
+        _rebind_role_menus(legacy.id, canonical.id)
+        legacy.is_delete = 1
+        legacy.delete_time = datetime.utcnow()
+
+    for dup in live_homes[1:]:
+        _rebind_role_menus(dup.id, canonical.id)
+        dup.is_delete = 1
+        dup.delete_time = datetime.utcnow()
+
+    if not (canonical.api_path_prefix or "").strip():
+        canonical.api_path_prefix = "/api/biz/home"
+
+
+def ensure_phase1_menu_structure(session: Session) -> None:
+    """
+    阶段一菜单结构：工作台 / 审核中心 / 案件中心 / 机构中心 / 基础资料 / 内容运营。
+    可重复执行；与 migrations/phase1_menu_refactor.sql 逻辑一致。
+    """
+    _merge_home_menu_names(session)
+
+    workbench = _ensure_catalog_menu(
+        session, name="workbench", title="工作台", path="/workbench", icon="HomeFilled", sort=1
+    )
+    audit_center = _ensure_catalog_menu(
+        session, name="auditCenter", title="审核中心", path="/audit", icon="CircleCheck", sort=2
+    )
+    case_center = _ensure_catalog_menu(
+        session, name="caseCenter", title="案件中心", path="/case", icon="FolderOpened", sort=3
+    )
+    agency_center = _ensure_catalog_menu(
+        session, name="agencyCenter", title="机构中心", path="/agency", icon="OfficeBuilding", sort=4
+    )
+    base_data = _ensure_catalog_menu(
+        session, name="baseData", title="基础资料", path="/base", icon="Collection", sort=5
+    )
+    content_ops = _ensure_catalog_menu(
+        session, name="contentOps", title="内容运营", path="/content", icon="Reading", sort=6
+    )
+    system_menu = session.query(SysMenu).filter(SysMenu.name == "system", SysMenu.is_delete == 0).first()
+    if system_menu:
+        system_menu.sort = 7
+
+    # 首页 → 工作台
+    home = (
+        session.query(SysMenu)
+        .filter(SysMenu.name == "home", SysMenu.is_delete == 0)
+        .order_by(SysMenu.id.asc())
+        .first()
+    )
+    if home:
+        home.parent_id = workbench.id
+        home.sort = 1
+        if not (home.api_path_prefix or "").strip():
+            home.api_path_prefix = "/api/biz/home"
+
+    # 案件列表
+    case_manage = session.query(SysMenu).filter(SysMenu.name == "caseManage", SysMenu.is_delete == 0).first()
+    if not case_manage:
+        case_manage = SysMenu(
+            parent_id=case_center.id,
+            menu_type="MENU",
+            name="caseManage",
+            title="案件列表",
+            path="/business/caseManage",
+            component="/business/caseManage/index",
+            icon="FolderOpened",
+            sort=1,
+            api_path_prefix="/api/biz/case",
+        )
+        session.add(case_manage)
+        session.flush()
+    else:
+        case_manage.parent_id = case_center.id
+        case_manage.title = "案件列表"
+        case_manage.sort = 1
+        if not (case_manage.component or "").strip():
+            case_manage.component = "/business/caseManage/index"
+        if not (case_manage.path or "").strip():
+            case_manage.path = "/business/caseManage"
+        if not (case_manage.api_path_prefix or "").strip():
+            case_manage.api_path_prefix = "/api/biz/case"
+
+    # 鉴定机构档案
+    agency_manage = session.query(SysMenu).filter(SysMenu.name == "agencyManage", SysMenu.is_delete == 0).first()
+    if not agency_manage:
+        agency_manage = SysMenu(
+            parent_id=agency_center.id,
+            menu_type="MENU",
+            name="agencyManage",
+            title="鉴定机构档案",
+            path="/agency/archive",
+            component="/business/agencyManage/index",
+            icon="OfficeBuilding",
+            sort=1,
+            api_path_prefix="/api/biz/agency",
+        )
+        session.add(agency_manage)
+        session.flush()
+    else:
+        agency_manage.parent_id = agency_center.id
+        agency_manage.title = "鉴定机构档案"
+        agency_manage.path = "/agency/archive"
+        agency_manage.sort = 1
+        if not (agency_manage.component or "").strip():
+            agency_manage.component = "/business/agencyManage/index"
+        if not (agency_manage.api_path_prefix or "").strip():
+            agency_manage.api_path_prefix = "/api/biz/agency"
+
+    # 机构入驻审核
+    onboard = session.query(SysMenu).filter(SysMenu.name == "agencyOnboardAudit", SysMenu.is_delete == 0).first()
+    if not onboard:
+        onboard = SysMenu(
+            parent_id=audit_center.id,
+            menu_type="MENU",
+            name="agencyOnboardAudit",
+            title="机构入驻审核",
+            path="/audit/agencyOnboard",
+            component="/audit/agencyOnboard/index",
+            icon="CircleCheck",
+            sort=3,
+            api_path_prefix="/api/biz/audit",
+        )
+        session.add(onboard)
+        session.flush()
+    else:
+        onboard.parent_id = audit_center.id
+        onboard.sort = 3
+
+    role = session.query(SysRole).filter(SysRole.code == "admin", SysRole.is_delete == 0).first()
+    if role:
+        for m in (case_manage, agency_manage, onboard):
+            if m and m not in role.menus:
+                role.menus.append(m)
+
+    for child_name, sort in (("insuranceManage", 1), ("fragmentManage", 2)):
+        child = session.query(SysMenu).filter(SysMenu.name == child_name, SysMenu.is_delete == 0).first()
+        if child:
+            child.parent_id = base_data.id
+            child.sort = sort
+
+    for child_name, sort in (("newsCategory", 1), ("newsArticle", 2)):
+        child = session.query(SysMenu).filter(SysMenu.name == child_name, SysMenu.is_delete == 0).first()
+        if child:
+            child.parent_id = content_ops.id
+            child.sort = sort
+
+    # 软删除 business / newsCenter 空壳
+    for obsolete_name in ("business", "newsCenter"):
+        obsolete = session.query(SysMenu).filter(SysMenu.name == obsolete_name, SysMenu.is_delete == 0).first()
+        if obsolete:
+            obsolete.is_delete = 1
+            obsolete.delete_time = datetime.utcnow()
 
     session.commit()
-    print("已检查「业务管理」目录并关联超级管理员角色。")
+    print("已检查阶段一菜单结构（工作台/审核中心/案件中心/机构中心/基础资料/内容运营）。")
+
+
+PHASE2_AUDIT_MENU_NAMES = (
+    "auditCenter",
+    "casePlatformAudit",
+    "caseAgencySubmitAudit",
+    "agencyOnboardAudit",
+    "auditRecord",
+)
+PHASE2_AUDIT_PERMISSION_CODES = (
+    "case:platformAudit:query",
+    "case:platformAudit:approve",
+    "case:platformAudit:reject",
+    "case:agencySubmitAudit:query",
+    "case:agencySubmitAudit:approve",
+    "case:agencySubmitAudit:reject",
+    "auditRecord:query",
+)
+PHASE2_AUDIT_BUTTON_PARENTS = (
+    "casePlatformAudit",
+    "caseAgencySubmitAudit",
+    "auditRecord",
+)
+
+
+def _find_button_by_permission_or_name(session: Session, code: str) -> Optional[SysMenu]:
+    """按 permission 优先、name 兜底查找按钮节点（兼容旧 name 体系）。"""
+    code = (code or "").strip()
+    if not code:
+        return None
+    rows = (
+        session.query(SysMenu)
+        .filter(SysMenu.menu_type == "BUTTON", SysMenu.is_delete == 0)
+        .filter(or_(SysMenu.permission == code, SysMenu.name == code))
+        .order_by(SysMenu.id.asc())
+        .all()
+    )
+    return rows[0] if rows else None
+
+
+def _revoke_phase2_audit_from_non_admin(session: Session) -> int:
+    """收回非 admin 角色对审核中心菜单/按钮的误授权。"""
+    parent_ids = [
+        row[0]
+        for row in session.query(SysMenu.id)
+        .filter(SysMenu.name.in_(PHASE2_AUDIT_BUTTON_PARENTS), SysMenu.is_delete == 0)
+        .all()
+    ]
+    audit_menus = (
+        session.query(SysMenu)
+        .filter(
+            SysMenu.is_delete == 0,
+            or_(
+                SysMenu.name.in_(PHASE2_AUDIT_MENU_NAMES),
+                SysMenu.permission.in_(PHASE2_AUDIT_PERMISSION_CODES),
+                SysMenu.parent_id.in_(parent_ids) if parent_ids else false(),
+            ),
+        )
+        .all()
+    )
+    audit_menu_ids = {m.id for m in audit_menus}
+    if not audit_menu_ids:
+        return 0
+
+    revoked = 0
+    roles = session.query(SysRole).filter(SysRole.code != "admin", SysRole.is_delete == 0).all()
+    for role in roles:
+        before = len(role.menus)
+        role.menus = [m for m in role.menus if m.id not in audit_menu_ids]
+        revoked += before - len(role.menus)
+    return revoked
+
+
+def _ensure_audit_buttons_under_parent(
+    session: Session,
+    parent_menu_name: str,
+    definitions: list[tuple[str, str, int]],
+) -> tuple[int, int]:
+    """审核按钮：permission 优先匹配旧节点，再归位 parent_id。"""
+    parent = session.query(SysMenu).filter(SysMenu.name == parent_menu_name, SysMenu.is_delete == 0).first()
+    if not parent:
+        print(f"[审核按钮] 未找到父菜单「{parent_menu_name}」，跳过。")
+        return 0, 0
+    role = session.query(SysRole).filter(SysRole.code == "admin", SysRole.is_delete == 0).first()
+    created = 0
+    reparented = 0
+    for code, title, sort in definitions:
+        btn = _find_button_by_permission_or_name(session, code)
+        if not btn:
+            btn = SysMenu(
+                parent_id=parent.id,
+                menu_type="BUTTON",
+                name=code,
+                title=title,
+                permission=code,
+                sort=sort,
+            )
+            session.add(btn)
+            session.flush()
+            created += 1
+        else:
+            if btn.parent_id != parent.id:
+                btn.parent_id = parent.id
+                reparented += 1
+            if not (btn.permission or "").strip():
+                btn.permission = code
+            btn.title = title
+            btn.sort = sort
+        if role and btn not in role.menus:
+            role.menus.append(btn)
+    return created, reparented
+
+
+def ensure_agency_button_menus(session: Session) -> None:
+    """鉴定机构管理页按钮权限。"""
+    ensure_button_menus_under_parent(
+        session,
+        "agencyManage",
+        [
+            ("agency:add", "新增", 1),
+            ("agency:edit", "编辑", 2),
+            ("agency:delete", "删除", 3),
+            ("agency:audit", "审核", 4),
+        ],
+    )
+
+
+def ensure_phase2_audit_menus(session: Session) -> None:
+    """
+    阶段二 PR-3：审核中心子菜单（案件提交 / 机构提交 / 审核记录）。
+    与 migrations/phase2_menu_audit.sql 逻辑一致，可重复执行。
+    """
+    audit_center = session.query(SysMenu).filter(SysMenu.name == "auditCenter", SysMenu.is_delete == 0).first()
+    if not audit_center:
+        print("未找到「审核中心」目录，跳过阶段二审核菜单。")
+        return
+
+    menu_defs = (
+        (
+            "casePlatformAudit",
+            "案件提交审核",
+            "/audit/casePlatform",
+            "/audit/casePlatform/index",
+            "DocumentChecked",
+            1,
+            "/api/biz/audit",
+        ),
+        (
+            "caseAgencySubmitAudit",
+            "机构提交审核",
+            "/audit/caseAgencySubmit",
+            "/audit/caseAgencySubmit/index",
+            "Tickets",
+            2,
+            "/api/biz/audit",
+        ),
+        (
+            "auditRecord",
+            "审核记录",
+            "/audit/record",
+            "/audit/record/index",
+            "List",
+            4,
+            "/api/biz/audit",
+        ),
+    )
+    created_menus: list[SysMenu] = []
+    for name, title, path, component, icon, sort, api_prefix in menu_defs:
+        row = session.query(SysMenu).filter(SysMenu.name == name, SysMenu.is_delete == 0).first()
+        if not row:
+            row = SysMenu(
+                parent_id=audit_center.id,
+                menu_type="MENU",
+                name=name,
+                title=title,
+                path=path,
+                component=component,
+                icon=icon,
+                sort=sort,
+                api_path_prefix=api_prefix,
+            )
+            session.add(row)
+            session.flush()
+            created_menus.append(row)
+        else:
+            row.parent_id = audit_center.id
+            row.title = title
+            row.path = path
+            row.component = component
+            row.icon = icon
+            row.sort = sort
+            row.api_path_prefix = api_prefix
+
+    onboard = session.query(SysMenu).filter(SysMenu.name == "agencyOnboardAudit", SysMenu.is_delete == 0).first()
+    if onboard:
+        onboard.parent_id = audit_center.id
+        onboard.sort = 3
+
+    role = session.query(SysRole).filter(SysRole.code == "admin", SysRole.is_delete == 0).first()
+    if role:
+        if audit_center not in role.menus:
+            role.menus.append(audit_center)
+        for name, *_ in menu_defs:
+            menu = session.query(SysMenu).filter(SysMenu.name == name, SysMenu.is_delete == 0).first()
+            if menu and menu not in role.menus:
+                role.menus.append(menu)
+        if onboard and onboard not in role.menus:
+            role.menus.append(onboard)
+
+    session.commit()
+    print(
+        f"已检查阶段二审核菜单（本批新建 {len(created_menus)} 个 MENU）。"
+    )
+
+
+def ensure_phase2_audit_button_menus(session: Session) -> None:
+    """阶段二 PR-3：审核中心各页按钮权限（permission 优先归位 + 收回非 admin 误授权）。"""
+    total_created = 0
+    total_reparented = 0
+    for parent_name, definitions in (
+        (
+            "casePlatformAudit",
+            [
+                ("case:platformAudit:query", "查询", 0),
+                ("case:platformAudit:approve", "通过", 1),
+                ("case:platformAudit:reject", "驳回", 2),
+            ],
+        ),
+        (
+            "caseAgencySubmitAudit",
+            [
+                ("case:agencySubmitAudit:query", "查询", 0),
+                ("case:agencySubmitAudit:approve", "通过", 1),
+                ("case:agencySubmitAudit:reject", "驳回", 2),
+            ],
+        ),
+        (
+            "auditRecord",
+            [
+                ("auditRecord:query", "查询", 0),
+            ],
+        ),
+    ):
+        created, reparented = _ensure_audit_buttons_under_parent(session, parent_name, definitions)
+        total_created += created
+        total_reparented += reparented
+    revoked = _revoke_phase2_audit_from_non_admin(session)
+    session.commit()
+    print(
+        f"[审核按钮] 已同步（新建 {total_created}，归位 {total_reparented}，"
+        f"收回非 admin 关联 {revoked} 条）。"
+    )
+
+
+def ensure_phase3_experience_menus(session: Session) -> None:
+    """阶段三：字典快捷入口、待办提醒、机构账号、拒单记录。"""
+    role = session.query(SysRole).filter(SysRole.code == "admin").first()
+
+    base_data = session.query(SysMenu).filter(SysMenu.name == "baseData", SysMenu.is_delete == 0).first()
+    if base_data:
+        for name, title, path, icon, sort in (
+            ("accidentTypeDict", "事故类型", "/base/dict/accidentType", "Warning", 3),
+            ("injuryTypeDict", "伤情类型", "/base/dict/injuryType", "FirstAidKit", 4),
+        ):
+            menu = session.query(SysMenu).filter(SysMenu.name == name, SysMenu.is_delete == 0).first()
+            if not menu:
+                menu = SysMenu(
+                    parent_id=base_data.id,
+                    menu_type="MENU",
+                    name=name,
+                    title=title,
+                    path=path,
+                    component="/system/dictManage/index",
+                    icon=icon,
+                    sort=sort,
+                    api_path_prefix="/api/dict",
+                )
+                session.add(menu)
+                session.flush()
+            else:
+                menu.parent_id = base_data.id
+                menu.title = title
+                menu.path = path
+                menu.component = "/system/dictManage/index"
+                menu.icon = icon
+                menu.sort = sort
+                if not (menu.api_path_prefix or "").strip():
+                    menu.api_path_prefix = "/api/dict"
+            if role:
+                if base_data not in role.menus:
+                    role.menus.append(base_data)
+                if menu not in role.menus:
+                    role.menus.append(menu)
+
+    workbench = session.query(SysMenu).filter(SysMenu.name == "workbench", SysMenu.is_delete == 0).first()
+    if workbench:
+        todo = session.query(SysMenu).filter(SysMenu.name == "workbenchTodo", SysMenu.is_delete == 0).first()
+        if not todo:
+            todo = SysMenu(
+                parent_id=workbench.id,
+                menu_type="MENU",
+                name="workbenchTodo",
+                title="待办提醒",
+                path="/workbench/todo",
+                component="/workbench/todo/index",
+                icon="Bell",
+                sort=2,
+                api_path_prefix="/api/biz/home",
+            )
+            session.add(todo)
+            session.flush()
+        else:
+            todo.parent_id = workbench.id
+            todo.path = "/workbench/todo"
+            todo.component = "/workbench/todo/index"
+            todo.sort = 2
+            if not (todo.api_path_prefix or "").strip():
+                todo.api_path_prefix = "/api/biz/home"
+        if role:
+            if workbench not in role.menus:
+                role.menus.append(workbench)
+            if todo not in role.menus:
+                role.menus.append(todo)
+
+    agency_center = session.query(SysMenu).filter(SysMenu.name == "agencyCenter", SysMenu.is_delete == 0).first()
+    if agency_center:
+        agency_menus = (
+            ("agencyAccount", "机构账号", "/agency/account", "/system/accountManage/index", "User", 2, "/api/user"),
+            (
+                "agencyRejectLog",
+                "拒单记录",
+                "/agency/rejectLog",
+                "/business/agencyRejectLog/index",
+                "DocumentDelete",
+                3,
+                "/api/biz/agency",
+            ),
+        )
+        for name, title, path, component, icon, sort, api_prefix in agency_menus:
+            menu = session.query(SysMenu).filter(SysMenu.name == name, SysMenu.is_delete == 0).first()
+            if not menu:
+                menu = SysMenu(
+                    parent_id=agency_center.id,
+                    menu_type="MENU",
+                    name=name,
+                    title=title,
+                    path=path,
+                    component=component,
+                    icon=icon,
+                    sort=sort,
+                    api_path_prefix=api_prefix,
+                )
+                session.add(menu)
+                session.flush()
+            else:
+                menu.parent_id = agency_center.id
+                menu.title = title
+                menu.path = path
+                menu.component = component
+                menu.icon = icon
+                menu.sort = sort
+                if not (menu.api_path_prefix or "").strip():
+                    menu.api_path_prefix = api_prefix
+            if role:
+                if agency_center not in role.menus:
+                    role.menus.append(agency_center)
+                if menu not in role.menus:
+                    role.menus.append(menu)
+
+    session.commit()
+    print("[阶段三] 体验优化菜单已同步。")
+    ensure_phase3_button_grants(session)
+
+
+def _grant_buttons_to_roles_with_page_menus(
+    session: Session,
+    page_names: tuple[str, ...],
+    permission_codes: tuple[str, ...],
+) -> int:
+    """将已有按钮权限同步给拥有指定页面菜单的角色。"""
+    page_ids = [
+        row[0]
+        for row in session.query(SysMenu.id)
+        .filter(SysMenu.name.in_(page_names), SysMenu.is_delete == 0)
+        .all()
+    ]
+    if not page_ids:
+        return 0
+    role_ids = {
+        row[0]
+        for row in session.query(SysRoleMenu.role_id).filter(SysRoleMenu.menu_id.in_(page_ids)).distinct().all()
+    }
+    buttons = (
+        session.query(SysMenu)
+        .filter(
+            SysMenu.menu_type == "BUTTON",
+            SysMenu.is_delete == 0,
+            SysMenu.permission.in_(permission_codes),
+        )
+        .all()
+    )
+    granted = 0
+    for role_id in role_ids:
+        role = session.query(SysRole).filter(SysRole.id == role_id, SysRole.is_delete == 0).first()
+        if not role:
+            continue
+        for btn in buttons:
+            if btn not in role.menus:
+                role.menus.append(btn)
+                granted += 1
+    if granted:
+        session.commit()
+    return granted
+
+
+def ensure_user_account_button_menus(session: Session) -> None:
+    """系统/机构账号页按钮权限（含列表查询收口）。"""
+    ensure_button_menus_under_parent(
+        session,
+        "accountManage",
+        [
+            ("user:query", "查询", 0),
+            ("user:queryAll", "全量查询", 1),
+            ("user:add", "新增", 2),
+            ("user:edit", "编辑", 3),
+            ("user:delete", "删除", 4),
+            ("user:export", "导出", 5),
+            ("user:import", "导入", 6),
+        ],
+    )
+
+
+def ensure_phase3_button_grants(session: Session) -> None:
+    """阶段三：页面菜单与按钮授权对齐（与 phase3_menu_experience.sql 一致）。"""
+    ensure_user_account_button_menus(session)
+    granted = 0
+    granted += _grant_buttons_to_roles_with_page_menus(
+        session,
+        ("accidentTypeDict", "injuryTypeDict"),
+        ("dictData:add", "dictData:edit", "dictData:delete"),
+    )
+    granted += _grant_buttons_to_roles_with_page_menus(
+        session,
+        ("agencyAccount",),
+        ("user:query", "user:add", "user:edit", "user:delete"),
+    )
+    granted += _grant_buttons_to_roles_with_page_menus(
+        session,
+        ("agencyRejectLog",),
+        ("agency:query",),
+    )
+    admin = session.query(SysRole).filter(SysRole.code == "admin", SysRole.is_delete == 0).first()
+    if admin:
+        for code in ("user:query", "user:queryAll"):
+            btn = _find_button_by_permission_or_name(session, code)
+            if btn and btn not in admin.menus:
+                admin.menus.append(btn)
+        session.commit()
+    print(f"[阶段三] 按钮授权已同步（角色-按钮新增关联 {granted} 条）。")
+
+
+def ensure_phase4_completion_menus(session: Session) -> None:
+    """阶段四：合作范围、区域配置、入驻审核独立页、案件多视图。"""
+    role = session.query(SysRole).filter(SysRole.code == "admin", SysRole.is_delete == 0).first()
+
+    onboard = session.query(SysMenu).filter(SysMenu.name == "agencyOnboardAudit", SysMenu.is_delete == 0).first()
+    if onboard:
+        onboard.component = "/audit/agencyOnboard/index"
+        if not (onboard.api_path_prefix or "").strip():
+            onboard.api_path_prefix = "/api/biz/audit"
+
+    agency_center = session.query(SysMenu).filter(SysMenu.name == "agencyCenter", SysMenu.is_delete == 0).first()
+    if agency_center:
+        scope = session.query(SysMenu).filter(SysMenu.name == "agencyScope", SysMenu.is_delete == 0).first()
+        if not scope:
+            scope = SysMenu(
+                parent_id=agency_center.id,
+                menu_type="MENU",
+                name="agencyScope",
+                title="合作范围",
+                path="/agency/scope",
+                component="/business/agencyScope/index",
+                icon="MapLocation",
+                sort=4,
+                api_path_prefix="/api/biz/agency",
+            )
+            session.add(scope)
+            session.flush()
+        else:
+            scope.parent_id = agency_center.id
+            scope.path = "/agency/scope"
+            scope.component = "/business/agencyScope/index"
+            scope.sort = 4
+            if not (scope.api_path_prefix or "").strip():
+                scope.api_path_prefix = "/api/biz/agency"
+        if role:
+            if agency_center not in role.menus:
+                role.menus.append(agency_center)
+            if scope not in role.menus:
+                role.menus.append(scope)
+
+    base_data = session.query(SysMenu).filter(SysMenu.name == "baseData", SysMenu.is_delete == 0).first()
+    if base_data:
+        region = session.query(SysMenu).filter(SysMenu.name == "regionConfig", SysMenu.is_delete == 0).first()
+        if not region:
+            region = SysMenu(
+                parent_id=base_data.id,
+                menu_type="MENU",
+                name="regionConfig",
+                title="区域配置",
+                path="/base/regionConfig",
+                component="/business/regionConfig/index",
+                icon="Place",
+                sort=5,
+                api_path_prefix="/api/biz/region",
+            )
+            session.add(region)
+            session.flush()
+        else:
+            region.parent_id = base_data.id
+            region.path = "/base/regionConfig"
+            region.component = "/business/regionConfig/index"
+            region.sort = 5
+            if not (region.api_path_prefix or "").strip():
+                region.api_path_prefix = "/api/biz/region"
+        if role:
+            if base_data not in role.menus:
+                role.menus.append(base_data)
+            if region not in role.menus:
+                role.menus.append(region)
+
+    case_center = session.query(SysMenu).filter(SysMenu.name == "caseCenter", SysMenu.is_delete == 0).first()
+    if case_center:
+        case_views = (
+            ("casePendingConfirm", "待确认案件", "/caseCenter/pendingConfirm", "Clock", 2),
+            ("caseInProgress", "鉴定中案件", "/caseCenter/inProgress", "Loading", 3),
+            ("caseCompleted", "已完成案件", "/caseCenter/completed", "CircleCheck", 4),
+            ("caseRework", "已打回案件", "/caseCenter/rework", "RefreshLeft", 5),
+        )
+        for name, title, path, icon, sort in case_views:
+            menu = session.query(SysMenu).filter(SysMenu.name == name, SysMenu.is_delete == 0).first()
+            if not menu:
+                menu = SysMenu(
+                    parent_id=case_center.id,
+                    menu_type="MENU",
+                    name=name,
+                    title=title,
+                    path=path,
+                    component="/business/caseManage/index",
+                    icon=icon,
+                    sort=sort,
+                    api_path_prefix="/api/biz/case",
+                )
+                session.add(menu)
+                session.flush()
+            else:
+                menu.parent_id = case_center.id
+                menu.title = title
+                menu.path = path
+                menu.component = "/business/caseManage/index"
+                menu.icon = icon
+                menu.sort = sort
+                if not (menu.api_path_prefix or "").strip():
+                    menu.api_path_prefix = "/api/biz/case"
+            if role:
+                if case_center not in role.menus:
+                    role.menus.append(case_center)
+                if menu not in role.menus:
+                    role.menus.append(menu)
+
+        case_manage = session.query(SysMenu).filter(SysMenu.name == "caseManage", SysMenu.is_delete == 0).first()
+        if case_manage:
+            case_manage.sort = 1
+
+    session.commit()
+    ensure_button_menus_under_parent(
+        session,
+        "agencyScope",
+        [
+            ("agency:scope:query", "查询", 0),
+            ("agency:scope:edit", "维护", 1),
+        ],
+    )
+    ensure_button_menus_under_parent(
+        session,
+        "regionConfig",
+        [
+            ("region:query", "查询", 0),
+            ("region:edit", "维护", 1),
+        ],
+    )
+    ensure_button_menus_under_parent(
+        session,
+        "agencyOnboardAudit",
+        [
+            ("agency:query", "查询", 0),
+            ("agency:audit", "审核", 1),
+        ],
+    )
+
+    case_manage = session.query(SysMenu).filter(SysMenu.name == "caseManage", SysMenu.is_delete == 0).first()
+    if case_manage:
+        case_buttons = (
+            session.query(SysMenu)
+            .filter(SysMenu.parent_id == case_manage.id, SysMenu.menu_type == "BUTTON", SysMenu.is_delete == 0)
+            .all()
+        )
+        for view_name in ("casePendingConfirm", "caseInProgress", "caseCompleted", "caseRework"):
+            view_page = session.query(SysMenu).filter(SysMenu.name == view_name, SysMenu.is_delete == 0).first()
+            if not view_page:
+                continue
+            for btn in case_buttons:
+                existing = (
+                    session.query(SysMenu)
+                    .filter(
+                        SysMenu.parent_id == view_page.id,
+                        SysMenu.permission == btn.permission,
+                        SysMenu.menu_type == "BUTTON",
+                        SysMenu.is_delete == 0,
+                    )
+                    .first()
+                )
+                if existing:
+                    continue
+                session.add(
+                    SysMenu(
+                        parent_id=view_page.id,
+                        menu_type="BUTTON",
+                        name=f"{view_name}_{btn.permission}",
+                        title=btn.title,
+                        permission=btn.permission,
+                        sort=btn.sort,
+                    )
+                )
+        session.flush()
+
+    granted = 0
+    granted += _grant_buttons_to_roles_with_page_menus(
+        session,
+        ("agencyScope",),
+        ("agency:scope:query", "agency:scope:edit"),
+    )
+    granted += _grant_buttons_to_roles_with_page_menus(
+        session,
+        ("regionConfig",),
+        ("region:query", "region:edit"),
+    )
+    granted += _grant_buttons_to_roles_with_page_menus(
+        session,
+        ("agencyOnboardAudit",),
+        ("agency:query", "agency:audit"),
+    )
+    case_perms = tuple(
+        b.permission
+        for b in (
+            session.query(SysMenu)
+            .filter(
+                SysMenu.parent_id == (case_manage.id if case_manage else 0),
+                SysMenu.menu_type == "BUTTON",
+                SysMenu.is_delete == 0,
+            )
+            .all()
+        )
+        if b.permission
+    )
+    if case_manage and case_perms:
+        case_manage_role_ids = {
+            row[0]
+            for row in session.query(SysRoleMenu.role_id)
+            .filter(SysRoleMenu.menu_id == case_manage.id)
+            .distinct()
+            .all()
+        }
+        for view_name in ("casePendingConfirm", "caseInProgress", "caseCompleted", "caseRework"):
+            view_page = session.query(SysMenu).filter(SysMenu.name == view_name, SysMenu.is_delete == 0).first()
+            if not view_page:
+                continue
+            granted += _grant_buttons_to_roles_with_page_menus(session, (view_name,), case_perms)
+            for role_id in case_manage_role_ids:
+                role_row = session.query(SysRole).filter(SysRole.id == role_id, SysRole.is_delete == 0).first()
+                if role_row and view_page not in role_row.menus:
+                    role_row.menus.append(view_page)
+    session.commit()
+    print(f"[阶段四] 文档剩余功能菜单已同步（按钮授权新增 {granted} 条）。")
 
 
 def ensure_fragment_manage_menu(session: Session) -> None:
-    """「业务管理 -> 碎片管理」菜单并授权 admin。"""
-    parent = session.query(SysMenu).filter(SysMenu.name == "business").first()
+    """「基础资料 -> 碎片管理」菜单并授权 admin。"""
+    parent = session.query(SysMenu).filter(SysMenu.name == "baseData", SysMenu.is_delete == 0).first()
     if not parent:
-        print("未找到「业务管理」目录，跳过碎片管理菜单。")
+        print("未找到「基础资料」目录，跳过碎片管理菜单。")
         return
 
     child = session.query(SysMenu).filter(SysMenu.name == "fragmentManage").first()
@@ -665,7 +1562,7 @@ def ensure_fragment_manage_menu(session: Session) -> None:
             role.menus.append(child)
 
     session.commit()
-    print("已检查「业务管理 -> 碎片管理」菜单并关联超级管理员角色。")
+    print("已检查「基础资料 -> 碎片管理」菜单并关联超级管理员角色。")
 
 
 def ensure_fragment_category_seed(session: Session) -> None:
@@ -929,20 +1826,12 @@ def ensure_biz_case_dict_init(session: Session) -> None:
 
 
 def ensure_news_center_menu(session: Session) -> None:
-    """创建「新闻中心 -> 新闻分类」菜单并授权 admin；已存在则跳过。"""
-    parent = session.query(SysMenu).filter(SysMenu.name == "newsCenter").first()
+    """创建「内容运营 -> 新闻分类」菜单并授权 admin；已存在则跳过。"""
+    parent = session.query(SysMenu).filter(SysMenu.name == "contentOps", SysMenu.is_delete == 0).first()
     if not parent:
-        parent = SysMenu(
-            parent_id=None,
-            menu_type="CATALOG",
-            name="newsCenter",
-            title="新闻中心",
-            path="/news",
-            icon="Document",
-            sort=3,
+        parent = _ensure_catalog_menu(
+            session, name="contentOps", title="内容运营", path="/content", icon="Reading", sort=6
         )
-        session.add(parent)
-        session.flush()
 
     child = session.query(SysMenu).filter(SysMenu.name == "newsCategory").first()
     if not child:
@@ -967,7 +1856,7 @@ def ensure_news_center_menu(session: Session) -> None:
             role.menus.append(child)
 
     session.commit()
-    print("已检查「新闻中心 -> 新闻分类」菜单并关联超级管理员角色。")
+    print("已检查「内容运营 -> 新闻分类」菜单并关联超级管理员角色。")
 
 
 def ensure_news_category_init(session: Session) -> None:
@@ -994,10 +1883,10 @@ def ensure_news_category_init(session: Session) -> None:
 
 
 def ensure_news_article_menu(session: Session) -> None:
-    """在「新闻中心」下挂「新闻列表」菜单并授权 admin。"""
-    parent = session.query(SysMenu).filter(SysMenu.name == "newsCenter").first()
+    """在「内容运营」下挂「新闻列表」菜单并授权 admin。"""
+    parent = session.query(SysMenu).filter(SysMenu.name == "contentOps", SysMenu.is_delete == 0).first()
     if not parent:
-        print("未找到「新闻中心」菜单，跳过新闻列表菜单补充。")
+        print("未找到「内容运营」菜单，跳过新闻列表菜单补充。")
         return
     child = session.query(SysMenu).filter(SysMenu.name == "newsArticle").first()
     if not child:
@@ -1075,10 +1964,10 @@ def ensure_root_department_and_backfill(session: Session) -> None:
 
 
 def ensure_insurance_manage_menu(session: Session) -> None:
-    """在「业务管理」下挂「保险公司」并授权 admin。"""
-    parent = session.query(SysMenu).filter(SysMenu.name == "business").first()
+    """在「基础资料」下挂「保险公司」并授权 admin。"""
+    parent = session.query(SysMenu).filter(SysMenu.name == "baseData", SysMenu.is_delete == 0).first()
     if not parent:
-        print("未找到「业务管理」菜单，跳过保险公司菜单补充。")
+        print("未找到「基础资料」菜单，跳过保险公司菜单补充。")
         return
     child = session.query(SysMenu).filter(SysMenu.name == "insuranceManage").first()
     if not child:
@@ -1099,7 +1988,7 @@ def ensure_insurance_manage_menu(session: Session) -> None:
     if role and child not in role.menus:
         role.menus.append(child)
     session.commit()
-    print("已检查「业务管理 -> 保险公司管理」菜单并关联超级管理员角色。")
+    print("已检查「基础资料 -> 保险公司管理」菜单并关联超级管理员角色。")
 
 def ensure_insurance_button_menus(session: Session) -> None:
     """保险公司页的按钮权限。"""
@@ -1234,12 +2123,17 @@ async def main() -> None:
                 await session.run_sync(ensure_news_category_init)
                 await session.run_sync(ensure_news_article_menu)
                 await session.run_sync(ensure_news_article_init)
-                await session.run_sync(ensure_business_manage_menu)
+                await session.run_sync(ensure_phase1_menu_structure)
                 await session.run_sync(ensure_fragment_manage_menu)
                 await session.run_sync(ensure_fragment_category_seed)
                 await session.run_sync(ensure_dict_news_button_menus)
                 await session.run_sync(ensure_role_button_menus)
                 await session.run_sync(ensure_case_appraisal_button_menu)
+                await session.run_sync(ensure_agency_button_menus)
+                await session.run_sync(ensure_phase2_audit_menus)
+                await session.run_sync(ensure_phase2_audit_button_menus)
+                await session.run_sync(ensure_phase3_experience_menus)
+                await session.run_sync(ensure_phase4_completion_menus)
                 await session.run_sync(ensure_fragment_button_menus)
                 await session.run_sync(ensure_root_department_and_backfill)
                 await session.run_sync(ensure_insurance_manage_menu)

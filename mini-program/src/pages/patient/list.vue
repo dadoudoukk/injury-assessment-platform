@@ -1,6 +1,6 @@
 <template>
   <view class="patient-list-page">
-    <PageHeader title="案件列表" compact :show-brand-line="true" />
+    <PageHeader title="我的报案" compact :show-brand-line="true" />
 
     <view class="patient-list-page__body">
       <LoadingState v-if="!initialized" fullscreen />
@@ -13,7 +13,7 @@
       />
 
       <EmptyState
-        v-else-if="caseList.length === 0 && !loading"
+        v-else-if="mergedList.length === 0 && !loading"
         :title="EMPTY_STATE_COPY.patientListTitle"
         :description="EMPTY_STATE_COPY.patientListDesc"
         :action-text="EMPTY_STATE_COPY.patientListAction"
@@ -21,14 +21,20 @@
       />
 
       <template v-else>
-        <CaseCard
-          v-for="item in caseList"
-          :key="item.id"
-          :item="item"
-          mode="patient"
-          report-no-prefix="报案号："
-          @click="goToDetail(item.id)"
-        />
+        <template v-for="entry in mergedList" :key="entryKey(entry)">
+          <ApplicationCard
+            v-if="entry.kind === 'application'"
+            :item="entry.data"
+            @click="goToApplicationDetail(entry.data.id)"
+          />
+          <CaseCard
+            v-else
+            :item="entry.data"
+            mode="patient"
+            report-no-prefix="报案号："
+            @click="goToDetail(entry.data.id)"
+          />
+        </template>
 
         <LoadMoreFooter
           :loading="loading"
@@ -47,16 +53,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { onLoad, onPullDownRefresh, onReachBottom, onUnload } from '@dcloudio/uni-app'
-import { fetchCaseList } from '@/api/case'
+import ApplicationCard from '@/components/case/ApplicationCard.vue'
 import CaseCard from '@/components/case/CaseCard.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import LoadMoreFooter from '@/components/common/LoadMoreFooter.vue'
 import BottomNav from '@/components/navigation/BottomNav.vue'
-import { usePagination } from '@/composables/usePagination'
+import { usePatientMergedList } from '@/composables/usePatientMergedList'
 import { EMPTY_STATE_COPY, FEEDBACK_COPY, LIST_COPY } from '@/constants/copy'
 import { ROUTES } from '@/constants/routes'
+import type { PatientListEntry } from '@/types/case'
 import { showConfirm } from '@/utils/feedback'
 import { trackPageView } from '@/utils/logger'
 import { useUserStore } from '@/store/modules/user'
@@ -64,7 +71,7 @@ import { useUserStore } from '@/store/modules/user'
 const userStore = useUserStore()
 
 const {
-  list: caseList,
+  mergedList,
   loading,
   initialized,
   initialError,
@@ -73,12 +80,16 @@ const {
   refresh,
   loadMore,
   retryLoadMore,
-} = usePagination((params) => fetchCaseList(params))
+} = usePatientMergedList()
 
 const navItems = computed(() => [
   { key: 'create', label: '我要报案', variant: 'primary' as const },
   { key: 'logout', label: '退出登录', variant: 'danger' as const },
 ])
+
+function entryKey(entry: PatientListEntry): string {
+  return entry.kind === 'application' ? `app-${entry.data.id}` : `case-${entry.data.id}`
+}
 
 const goToCreate = () => {
   uni.navigateTo({ url: ROUTES.PATIENT_CREATE })
@@ -86,6 +97,10 @@ const goToCreate = () => {
 
 const goToDetail = (id: string | number) => {
   uni.navigateTo({ url: `${ROUTES.DETAIL}?id=${id}` })
+}
+
+const goToApplicationDetail = (id: string | number) => {
+  uni.navigateTo({ url: `${ROUTES.PATIENT_APPLICATION_DETAIL}?id=${id}` })
 }
 
 const handleLogout = async () => {

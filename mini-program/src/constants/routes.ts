@@ -3,6 +3,8 @@ export const ROUTES = {
   PATIENT_HOME: '/pages/patient/home',
   PATIENT_LIST: '/pages/patient/list',
   PATIENT_CREATE: '/pages/patient/create',
+  PATIENT_APPLICATION_DETAIL: '/pages/patient/application-detail',
+  PATIENT_RESUBMIT: '/pages/patient/resubmit',
   AGENCY_LOGIN: '/pages/login/index',
   AGENCY_REGISTER: '/pages/agency/register',
   WORKBENCH: '/pages/index/index',

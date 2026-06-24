@@ -355,6 +355,9 @@ def case_record_row(
     r: CaseRecord,
     agency_name: Optional[str] = None,
     viewer_ctx: Optional[Dict[str, Any]] = None,
+    *,
+    doc_overlay: Optional[Dict[str, Any]] = None,
+    include_certificate: bool = True,
 ) -> Dict[str, Any]:
     created = r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else ""
     updated = r.updated_at.strftime("%Y-%m-%d %H:%M:%S") if r.updated_at else ""
@@ -367,7 +370,24 @@ def case_record_row(
     if should_mask_victim_privacy(viewer_ctx, int(r.status)):
         victim_name = mask_victim_name(victim_name)
         victim_phone = mask_victim_phone(victim_phone)
-    return {
+
+    document_number = r.document_number or None
+    electronic_certificate = _serialize_json_object(r.electronic_certificate)
+    document_fields_source = "main"
+
+    if doc_overlay:
+        document_fields_source = str(doc_overlay.get("documentFieldsSource") or "main")
+        if document_fields_source == "pending_payload":
+            document_number = doc_overlay.get("documentNumber")
+            if include_certificate:
+                electronic_certificate = _serialize_json_object(doc_overlay.get("electronicCertificate"))
+            else:
+                electronic_certificate = None
+        elif document_fields_source == "hidden":
+            document_number = None
+            electronic_certificate = None
+
+    row: Dict[str, Any] = {
         "id": str(r.id),
         "reportNumber": r.report_number,
         "victimName": victim_name,
@@ -386,14 +406,25 @@ def case_record_row(
         "appraisalConclusion": r.appraisal_conclusion or None,
         "reportFiles": _serialize_report_files(r.report_files),
         "appraisalVideos": _serialize_json_list(r.appraisal_videos),
-        "documentNumber": r.document_number or None,
-        "electronicCertificate": _serialize_json_object(r.electronic_certificate),
+        "documentNumber": document_number,
+        "electronicCertificate": electronic_certificate,
         "reworkRemark": r.rework_remark or None,
         "appraisalSubmittedAt": submitted_at or None,
         "appraisalSubmittedBy": r.appraisal_submitted_by,
         "createdAt": created,
         "updatedAt": updated,
+        "documentFieldsSource": document_fields_source,
     }
+
+    if doc_overlay:
+        pending_id = doc_overlay.get("pendingAgencySubmitAuditId")
+        if pending_id:
+            row["pendingAgencySubmitAuditId"] = pending_id
+        reject_remark = doc_overlay.get("latestAgencySubmitRejectRemark")
+        if reject_remark:
+            row["latestAgencySubmitRejectRemark"] = reject_remark
+
+    return row
 
 
 def appraisal_agency_row(r: AppraisalAgency) -> Dict[str, Any]:

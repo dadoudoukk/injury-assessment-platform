@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, List, Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
@@ -155,7 +155,7 @@ class CaseRecord(SoftDeleteMixin, Base):
         default=1,
         nullable=False,
         index=True,
-        comment="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回",
+        comment="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回 6报告待平台审核",
     )
     agency_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="鉴定机构ID")
     rejected_agency_ids: Mapped[Optional[List[Any]]] = mapped_column(JSON, nullable=True, comment="拒单机构 ID 列表 JSON 数组")
@@ -210,6 +210,149 @@ class AppraisalAgency(SoftDeleteMixin, Base):
     )
     audit_remark: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, comment="审核驳回原因"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )
+
+
+class BizAgencyServiceScope(Base):
+    """鉴定机构合作服务范围（可承接案件的地区，与机构办公地址解耦）"""
+
+    __tablename__ = "biz_agency_service_scope"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    agency_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True, comment="鉴定机构 ID"
+    )
+    province: Mapped[str] = mapped_column(String(50), nullable=False, comment="省")
+    city: Mapped[str] = mapped_column(String(50), nullable=False, default="", comment="市（空表示全省）")
+    district: Mapped[str] = mapped_column(String(50), nullable=False, default="", comment="区县（空表示全市）")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+
+
+class BizRegionConfig(Base):
+    """平台业务开放区域配置（表非空时按白名单启用）"""
+
+    __tablename__ = "biz_region_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    province: Mapped[str] = mapped_column(String(50), nullable=False, comment="省")
+    city: Mapped[str] = mapped_column(String(50), nullable=False, default="", comment="市（空表示全省）")
+    district: Mapped[str] = mapped_column(String(50), nullable=False, default="", comment="区县（空表示全市）")
+    enabled: Mapped[int] = mapped_column(Integer, default=1, nullable=False, comment="1启用 0停用")
+    sort: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="排序")
+    remark: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="备注")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )
+
+
+class BizAgencyRejectLog(Base):
+    """机构拒单/换派记录（追加写，用于机构中心拒单记录页）"""
+
+    __tablename__ = "biz_agency_reject_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    case_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment="案件 ID")
+    report_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True, comment="出险报案号")
+    victim_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="伤者姓名")
+    agency_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, comment="被拒/换出机构 ID")
+    new_agency_id: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, comment="换派后新机构 ID，清空时为 NULL"
+    )
+    rejected_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True, comment="拒单/换出时间"
+    )
+    created_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sys_user.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="操作人",
+    )
+
+
+class BizCaseApplication(Base):
+    """伤者报案申请单（审核前主数据，不参与软删除）"""
+
+    __tablename__ = "biz_case_application"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    report_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True, comment="出险报案号")
+    victim_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="伤者姓名")
+    victim_phone: Mapped[str] = mapped_column(String(20), nullable=False, comment="联系电话")
+    report_date: Mapped[date] = mapped_column(Date, nullable=False, comment="出险/报案日期")
+    province: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案省份")
+    city: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案城市")
+    district: Mapped[str] = mapped_column(String(50), nullable=False, comment="报案区县")
+    accident_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="事故类型")
+    injury_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="伤情类型")
+    insurance_company: Mapped[str] = mapped_column(String(100), nullable=False, comment="所属保险公司")
+    created_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("sys_user.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="提交人 sys_user.id",
+    )
+    case_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="审核通过后关联的案件 ID")
+    app_status: Mapped[str] = mapped_column(
+        String(16),
+        default="pending_audit",
+        nullable=False,
+        comment="pending_audit | rejected | approved",
+    )
+    is_active: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        nullable=False,
+        comment="1=占用报案号的活跃申请 0=已结案",
+    )
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="结案时间")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )
+
+
+class BizAuditRecord(Base):
+    """统一审核记录"""
+
+    __tablename__ = "biz_audit_record"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    biz_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, comment="case_submit | agency_submit | agency_onboard"
+    )
+    biz_id: Mapped[int] = mapped_column(BigInteger, nullable=False, comment="application.id | case.id | agency.id")
+    submit_batch: Mapped[int] = mapped_column(Integer, default=1, nullable=False, comment="提交批次")
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False, comment="pending | approved | rejected"
+    )
+    submit_payload: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True, comment="本次提交快照")
+    audit_remark: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="审核备注/驳回原因")
+    audited_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("sys_user.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="审核人",
+    )
+    audited_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="审核时间")
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, comment="幂等键")
+    created_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("sys_user.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="提交人",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"

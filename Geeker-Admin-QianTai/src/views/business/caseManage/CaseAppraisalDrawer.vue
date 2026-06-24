@@ -1,6 +1,15 @@
 <template>
-  <el-drawer v-model="visible" title="查看鉴定结果" size="min(720px, 96vw)" destroy-on-close @closed="onClosed">
+  <el-drawer v-model="visible" :title="drawerTitle" size="min(720px, 96vw)" destroy-on-close @closed="onClosed">
     <div v-loading="loading" class="appraisal-drawer-body">
+      <el-alert
+        v-if="isReportPendingAudit"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="报告待平台审核"
+        description="当前文书为待审版本，平台审核通过前不作为案件终态展示。"
+        class="pending-audit-alert"
+      />
       <el-descriptions v-if="detail.reportNumber" :column="2" border class="case-summary">
         <el-descriptions-item label="出险报案号">{{ detail.reportNumber }}</el-descriptions-item>
         <el-descriptions-item label="伤者姓名">{{ detail.victimName }}</el-descriptions-item>
@@ -64,7 +73,7 @@
 
 <script setup lang="ts" name="CaseAppraisalDrawer">
 import { computed, reactive, ref } from "vue";
-import { getCaseRecordDetail, type CaseRecordRow } from "@/api/modules/bizCase";
+import { getCaseRecordDetail, CASE_STATUS, type CaseRecordRow } from "@/api/modules/bizCase";
 import { useTenantMode } from "@/hooks/useTenantMode";
 import type { AppraisalDrawerMode } from "./useCaseActions";
 
@@ -81,6 +90,10 @@ const loading = ref(false);
 const drawerParams = ref<AppraisalDrawerParams | null>(null);
 
 const detail = reactive<Partial<CaseRecordRow>>({});
+
+const isReportPendingAudit = computed(() => detail.status === CASE_STATUS.REPORT_PENDING_AUDIT);
+
+const drawerTitle = computed(() => (isReportPendingAudit.value ? "查看待审报告" : "查看鉴定结果"));
 
 const hasAnyContent = computed(
   () =>
@@ -128,6 +141,9 @@ defineExpose({ acceptParams });
 <style scoped lang="scss">
 .appraisal-drawer-body {
   min-height: 200px;
+}
+.pending-audit-alert {
+  margin-bottom: 16px;
 }
 .case-summary {
   margin-bottom: 20px;

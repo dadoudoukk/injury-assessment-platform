@@ -9,10 +9,12 @@ export const useAuthButtons = () => {
   const route = useRoute();
   const authStore = useAuthStore();
   const authButtons = authStore.authButtonListGet[route.name as string] || [];
+  const globalCodes = authStore.authButtonCodesGet || [];
 
   const BUTTONS = computed(() => {
     let currentPageAuthButton: { [key: string]: boolean } = {};
-    authButtons.forEach(item => (currentPageAuthButton[item] = true));
+    const codes = new Set([...authButtons, ...globalCodes]);
+    codes.forEach(item => (currentPageAuthButton[item] = true));
     return currentPageAuthButton;
   });
 

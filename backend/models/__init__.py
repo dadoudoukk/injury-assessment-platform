@@ -1,11 +1,16 @@
 from core.database import AsyncSessionLocal, Base, async_engine
 from models.business import (
     AppraisalAgency,
+    BizAgencyRejectLog,
+    BizAgencyServiceScope,
+    BizAuditRecord,
+    BizCaseApplication,
     BizFragmentCategory,
     BizFragmentContent,
     BizInsuranceCompany,
     BizNewsArticle,
     BizNewsCategory,
+    BizRegionConfig,
     CaseRecord,
 )
 from models.dictionary import SysDictData, SysDictType
@@ -31,7 +36,12 @@ __all__ = [
     "BizFragmentCategory",
     "BizFragmentContent",
     "CaseRecord",
+    "BizCaseApplication",
+    "BizAuditRecord",
     "AppraisalAgency",
+    "BizAgencyRejectLog",
+    "BizAgencyServiceScope",
+    "BizRegionConfig",
     "BizInsuranceCompany",
     "SysOperLog",
     "SysApi",

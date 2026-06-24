@@ -74,6 +74,50 @@ def _validate_agency_user_roles(agency_id: Optional[int], roles: List[SysRole]) 
     return None
 
 
+def _apply_user_list_filters(
+    stmt,
+    *,
+    username: Optional[str],
+    gender: Optional[str],
+    agency_id: Optional[int],
+    agency_only: Optional[int],
+):
+    if username and username.strip():
+        kw = f"%{username.strip()}%"
+        stmt = stmt.where(SysUser.username.like(kw))
+    if gender is not None and str(gender).strip() != "":
+        stmt = stmt.where(SysUser.gender == str(gender).strip())
+    if agency_id is not None:
+        stmt = stmt.where(SysUser.agency_id == agency_id)
+    if agency_only == 1:
+        stmt = stmt.where(SysUser.agency_id.isnot(None))
+    return stmt
+
+
+async def _user_list_perm_codes(db: AsyncSession, ctx: dict) -> Set[str]:
+    bundle = await db.run_sync(lambda s: get_user_perms_bundle(s, ctx))
+    return set(bundle.get("codes") or [])
+
+
+def _normalize_user_list_scope(body: UserListBody, perm_codes: Set[str]) -> tuple[UserListBody, Optional[str]]:
+    """列表/导出：须具备 user:query；无 user:queryAll 时强制仅查机构账号。"""
+    if "user:query" not in perm_codes:
+        return body, "无权查询用户列表"
+    if "user:queryAll" not in perm_codes:
+        return body.model_copy(update={"agencyOnly": 1}), None
+    return body, None
+
+
+def _normalize_user_export_scope(body: UserExportBody, perm_codes: Set[str]) -> tuple[UserExportBody, Optional[str]]:
+    if "user:query" not in perm_codes:
+        return body, "无权导出用户列表"
+    if "user:export" not in perm_codes:
+        return body, "无权导出用户列表"
+    if "user:queryAll" not in perm_codes:
+        return body.model_copy(update={"agencyOnly": 1}), None
+    return body, None
+
+
 @router.get("/info")
 async def user_info(
     x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
@@ -194,14 +238,21 @@ async def user_list_page(
     if not ctx:
         return make_response(401, data={}, msg="登录过期，请重新登录")
 
+    perm_codes = await _user_list_perm_codes(db, ctx)
+    body, scope_err = _normalize_user_list_scope(body, perm_codes)
+    if scope_err:
+        return make_response(403, data={}, msg=scope_err)
+
     q = select(SysUser).where(SysUser.is_delete == 0).options(
         selectinload(SysUser.roles), selectinload(SysUser.dept), selectinload(SysUser.agency)
     )
-    if body.username and body.username.strip():
-        kw = f"%{body.username.strip()}%"
-        q = q.where(SysUser.username.like(kw))
-    if body.gender is not None and str(body.gender).strip() != "":
-        q = q.where(SysUser.gender == str(body.gender).strip())
+    q = _apply_user_list_filters(
+        q,
+        username=body.username,
+        gender=body.gender,
+        agency_id=body.agencyId,
+        agency_only=body.agencyOnly,
+    )
 
     total = (
         await db.scalar(select(func.count()).select_from(SysUser).where(*q._where_criteria))
@@ -453,13 +504,21 @@ async def user_export(
         raise HTTPException(status_code=401, detail="登录过期，请重新登录")
 
     query_body = body or UserExportBody()
+    perm_codes = await _user_list_perm_codes(db, ctx)
+    query_body, scope_err = _normalize_user_export_scope(query_body, perm_codes)
+    if scope_err:
+        raise HTTPException(status_code=403, detail=scope_err)
+
     q = select(SysUser).where(SysUser.is_delete == 0).options(
         selectinload(SysUser.roles), selectinload(SysUser.dept), selectinload(SysUser.agency)
     )
-    if query_body.username and query_body.username.strip():
-        q = q.where(SysUser.username.like(f"%{query_body.username.strip()}%"))
-    if query_body.gender is not None and str(query_body.gender).strip() != "":
-        q = q.where(SysUser.gender == str(query_body.gender).strip())
+    q = _apply_user_list_filters(
+        q,
+        username=query_body.username,
+        gender=query_body.gender,
+        agency_id=query_body.agencyId,
+        agency_only=query_body.agencyOnly,
+    )
     users = (await db.scalars(q.order_by(SysUser.id.desc()))).all()
 
     rows: List[Dict[str, Any]] = []
@@ -472,6 +531,7 @@ async def user_export(
                 "性别": gender_to_label(u.gender),
                 "手机号": u.phone or "",
                 "邮箱": u.email or "",
+                "所属机构": (u.agency.agency_name if u.agency else "") or "",
                 "角色": role_names,
                 "状态": "启用" if u.is_active else "禁用",
                 "创建时间": u.created_at.strftime("%Y-%m-%d %H:%M:%S") if u.created_at else "",
@@ -481,7 +541,7 @@ async def user_export(
     def _build_export_excel_bytes() -> bytes:
         df = pd.DataFrame(
             rows,
-            columns=["用户名", "姓名", "性别", "手机号", "邮箱", "角色", "状态", "创建时间"],
+            columns=["用户名", "姓名", "性别", "手机号", "邮箱", "所属机构", "角色", "状态", "创建时间"],
         )
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:

@@ -1,6 +1,15 @@
 <template>
-  <div class="table-box">
-    <ProTable ref="proTable" :columns="columns" :request-api="getTableList" :data-callback="dataCallback">
+  <div class="table-box case-manage-page">
+    <el-tabs v-if="showStatusTabs" v-model="statusTab" class="case-status-tabs" @tab-change="onStatusTabChange">
+      <el-tab-pane v-for="tab in statusTabs" :key="tab.value" :label="tab.label" :name="tab.value" />
+    </el-tabs>
+    <ProTable
+      ref="proTable"
+      :columns="columns"
+      :request-api="getTableList"
+      :data-callback="dataCallback"
+      :init-param="tableInitParam"
+    >
       <template #tableHeader>
         <el-button v-if="canAddCase" type="primary" :icon="CirclePlus" @click="openAdd">新增案件</el-button>
         <el-button type="warning" plain :icon="Download" @click="downloadFile">导出案件</el-button>
@@ -114,7 +123,8 @@
 </template>
 
 <script setup lang="tsx" name="caseManage">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { CirclePlus } from "@element-plus/icons-vue";
 import { ElMessage, FormInstance } from "element-plus";
 import type { FormRules } from "element-plus";
@@ -131,6 +141,7 @@ import {
   reworkCaseRecord,
   getCaseRecordDetail,
   getCaseRecordList,
+  CASE_STATUS,
   CASE_STATUS_OPTIONS,
   CASE_STATUS_MAP,
   type CaseRecordForm,
@@ -144,11 +155,73 @@ import { decodeRegion, encodeRegion, formatRegionText, validateRegion } from "@/
 import CaseAppraisalDrawer from "./CaseAppraisalDrawer.vue";
 import { useCaseActions, type AppraisalDrawerMode } from "./useCaseActions";
 
-const caseStatusOptions = CASE_STATUS_OPTIONS.map(item => ({
+const caseStatusOptions = CASE_STATUS_OPTIONS.filter(item => item.value !== CASE_STATUS.REPORT_PENDING_AUDIT).map(item => ({
   ...item,
   tagType: CASE_STATUS_MAP[item.value]?.tagType ?? ""
 }));
 const caseStatusMap = CASE_STATUS_MAP;
+
+/** 案件中心生命周期 Tab（不含「报告待平台审核」，该类案件在审核中心处理） */
+const statusTabs = [
+  { label: "全部", value: "all" },
+  { label: "待确认", value: String(CASE_STATUS.PENDING_CONFIRM) },
+  { label: "鉴定中", value: String(CASE_STATUS.APPRAISING) },
+  { label: "已完成", value: String(CASE_STATUS.COMPLETED) },
+  { label: "已打回", value: String(CASE_STATUS.REWORK) }
+] as const;
+
+/** 案件中心多菜单入口：固定状态视图（§8.2） */
+const CASE_ROUTE_FIXED_STATUS: Record<string, string> = {
+  casePendingConfirm: String(CASE_STATUS.PENDING_CONFIRM),
+  caseInProgress: String(CASE_STATUS.APPRAISING),
+  caseCompleted: String(CASE_STATUS.COMPLETED),
+  caseRework: String(CASE_STATUS.REWORK)
+};
+
+const route = useRoute();
+
+const fixedStatusFromRoute = computed(() => {
+  const name = route.name;
+  if (typeof name === "string" && CASE_ROUTE_FIXED_STATUS[name]) {
+    return CASE_ROUTE_FIXED_STATUS[name];
+  }
+  return null;
+});
+
+const showStatusTabs = computed(() => route.name === "caseManage");
+
+const statusTab = ref<string>("all");
+
+const syncStatusTabFromRoute = () => {
+  if (fixedStatusFromRoute.value) {
+    statusTab.value = fixedStatusFromRoute.value;
+    return;
+  }
+  const fromQuery = route.query.statusTab;
+  if (typeof fromQuery === "string" && statusTabs.some(tab => tab.value === fromQuery)) {
+    statusTab.value = fromQuery;
+  }
+};
+
+watch(
+  () => [route.name, route.query.statusTab],
+  () => syncStatusTabFromRoute(),
+  { immediate: true }
+);
+
+const tableInitParam = computed(() => {
+  const param: Record<string, number> = {
+    excludeStatus: CASE_STATUS.REPORT_PENDING_AUDIT
+  };
+  if (statusTab.value !== "all") {
+    param.status = Number(statusTab.value);
+  }
+  return param;
+});
+
+const onStatusTabChange = () => {
+  proTable.value?.getTableList();
+};
 
 const ORPHAN_AGENCY_SUFFIX = " (已不可用)";
 
@@ -199,6 +272,7 @@ const form = reactive({
 });
 
 onMounted(async () => {
+  syncStatusTabFromRoute();
   const [accidentRes, injuryRes, agencyRes] = await Promise.all([
     getDictByCode("biz_accident_type"),
     getDictByCode("biz_injury_type"),
@@ -332,7 +406,10 @@ const getTableList = (params: any) => {
 };
 
 const downloadFile = async () => {
-  const params = proTable.value?.searchParam || {};
+  const params = {
+    ...(proTable.value?.searchParam || {}),
+    ...tableInitParam.value
+  };
   const formatted = formatListParams(JSON.parse(JSON.stringify(params)));
   useDownload(exportCaseRecord, "案件列表", formatted);
 };
@@ -534,7 +611,6 @@ const baseColumns: ColumnProps<CaseRecordRow>[] = [
     prop: "status",
     label: "案件状态",
     width: 100,
-    search: { el: "select", props: { placeholder: "请选择案件状态" } },
     enum: caseStatusOptions,
     render: scope => {
       const item = caseStatusMap[scope.row.status];
@@ -552,3 +628,18 @@ const columns = computed(() => {
   return baseColumns;
 });
 </script>
+
+<style scoped lang="scss">
+.case-manage-page {
+  .case-status-tabs {
+    margin-bottom: 12px;
+    padding: 0 4px;
+    background: var(--el-bg-color);
+    border-radius: 4px;
+
+    :deep(.el-tabs__header) {
+      margin-bottom: 0;
+    }
+  }
+}
+</style>

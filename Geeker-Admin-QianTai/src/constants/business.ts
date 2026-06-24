@@ -33,3 +33,9 @@ export const AGENCY_AUDIT_RESULT_OPTIONS = [
   { label: "通过", value: 1 },
   { label: "驳回", value: 3 }
 ] as const;
+
+/** 区域配置启用状态 */
+export const REGION_ENABLED_OPTIONS: EnumProps[] = [
+  { label: "启用", value: 1, tagType: "success" },
+  { label: "停用", value: 0, tagType: "info" }
+];

@@ -14,12 +14,29 @@ from starlette.responses import Response
 
 from api.deps import get_async_db, make_response, require_permission, require_user_with_data_perm
 from api.helpers import case_record_row
+from core.config import is_audit_first_agency_submit, is_audit_first_case_submit
 from core.context import ctx_agency_id, ctx_dept_id, ctx_user_id
+from services.audit_service import (
+    BIZ_TYPE_AGENCY_SUBMIT,
+    build_application_detail,
+    create_audit_record,
+    create_case_submit_application,
+    list_my_applications,
+    load_agency_submit_batch_histories,
+    load_agency_submit_overlays,
+    normalize_case_materials,
+    resubmit_case_submit,
+    resolve_agency_submit_overlay_visibility,
+    sanitize_agency_submit_overlay_map,
+    validate_case_materials,
+)
 from core.data_perm import apply_data_scope
 from core.file_validate import MAX_VIDEO_COUNT, validate_pdf_upload, validate_video_upload
 from core.paths import UPLOAD_DIR
+from core.dispatch import auto_dispatch_agency, is_case_region_enabled
 from core.region import city_equivalent_values, normalize_region
-from models import AppraisalAgency, BizInsuranceCompany, CaseRecord, SysUser
+from models import AppraisalAgency, BizAgencyRejectLog, BizCaseApplication, BizInsuranceCompany, CaseRecord, SysUser
+from schemas.audit import CaseSubmitResubmitBody
 from schemas.business import (
     CaseAppraisalVideosSubmit,
     CaseDocumentNumberSubmit,
@@ -29,6 +46,8 @@ from schemas.business import (
     CaseReworkBody,
 )
 
+_CASE_STATUS_QUERY_DESC = "案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回 6报告待平台审核"
+
 router = APIRouter(prefix="/biz/case", tags=["业务-案件管理"])
 
 STATUS_PENDING_CONFIRM = 1
@@ -36,14 +55,16 @@ STATUS_ACCEPTED = 2
 STATUS_APPRAISING = 3
 STATUS_COMPLETED = 4
 STATUS_REWORK = 5
+STATUS_REPORT_PENDING_AUDIT = 6
 
-VALID_CASE_STATUS = (1, 2, 3, 4, 5)
+VALID_CASE_STATUS = (1, 2, 3, 4, 5, 6)
 CASE_STATUS_LABELS = {
     STATUS_PENDING_CONFIRM: "待确认",
     STATUS_ACCEPTED: "已受理",
     STATUS_APPRAISING: "鉴定中",
     STATUS_COMPLETED: "已完成",
     STATUS_REWORK: "已打回",
+    STATUS_REPORT_PENDING_AUDIT: "报告待平台审核",
 }
 
 
@@ -165,6 +186,7 @@ def _apply_case_list_filters(
     report_number: Optional[str],
     victim_name: Optional[str],
     status: Optional[int],
+    exclude_status: Optional[int] = None,
     insurance_company: Optional[str],
     agency_id: Optional[int],
     report_date_start: Optional[date],
@@ -176,6 +198,8 @@ def _apply_case_list_filters(
         stmt = stmt.where(CaseRecord.victim_name.like(f"%{victim_name.strip()}%"))
     if status is not None:
         stmt = stmt.where(CaseRecord.status == status)
+    if exclude_status is not None:
+        stmt = stmt.where(CaseRecord.status != exclude_status)
     if insurance_company and insurance_company.strip():
         stmt = stmt.where(CaseRecord.insurance_company.like(f"%{insurance_company.strip()}%"))
     if agency_id is not None:
@@ -188,8 +212,22 @@ def _apply_case_list_filters(
 
 
 def _apply_agency_case_status_scope(stmt):
-    """机构账号可见其指派案件的全部流转状态（1~5）。"""
+    """机构账号可见其指派案件的全部流转状态（含 6=报告待平台审核）。"""
     return stmt
+
+
+async def _load_sanitized_case_overlays(
+    db: AsyncSession,
+    ctx: dict,
+    cases: List[CaseRecord],
+    *,
+    for_detail: bool,
+) -> Dict[int, Dict[str, Any]]:
+    if not cases:
+        return {}
+    visibility = await resolve_agency_submit_overlay_visibility(db, ctx, for_detail=for_detail)
+    overlays = await load_agency_submit_overlays(db, cases)
+    return sanitize_agency_submit_overlay_map(overlays, visibility)
 
 
 def _apply_case_list_order(stmt, *, is_agency: bool, status_filter: Optional[int]):
@@ -223,6 +261,58 @@ async def _validate_active_agency(db: AsyncSession, agency_id: int) -> Optional[
     return None
 
 
+def _append_rejected_agency_id(row: CaseRecord, agency_id: Optional[int]) -> None:
+    """换派机构时在案件 JSON 上记录被拒机构 ID（去重，兼容旧查询）。"""
+    if agency_id is None:
+        return
+    try:
+        aid = int(agency_id)
+    except (TypeError, ValueError):
+        return
+    if aid <= 0:
+        return
+    existing = row.rejected_agency_ids if isinstance(row.rejected_agency_ids, list) else []
+    normalized: List[int] = []
+    for item in existing:
+        try:
+            normalized.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    if aid not in normalized:
+        normalized.append(aid)
+        row.rejected_agency_ids = normalized
+
+
+async def _record_agency_reject_log(
+    db: AsyncSession,
+    row: CaseRecord,
+    rejected_agency_id: Optional[int],
+    new_agency_id: Optional[int],
+) -> None:
+    """写入拒单/换派审计日志（每次换出均追加，不依赖案件 updated_at）。"""
+    if rejected_agency_id is None:
+        return
+    try:
+        aid = int(rejected_agency_id)
+    except (TypeError, ValueError):
+        return
+    if aid <= 0:
+        return
+    _append_rejected_agency_id(row, aid)
+    now = datetime.utcnow()
+    db.add(
+        BizAgencyRejectLog(
+            case_id=int(row.id),
+            report_number=row.report_number,
+            victim_name=row.victim_name,
+            agency_id=aid,
+            new_agency_id=int(new_agency_id) if new_agency_id is not None else None,
+            rejected_at=now,
+            created_by=ctx_user_id.get(),
+        )
+    )
+
+
 async def _apply_agency_change(
     db: AsyncSession,
     row: CaseRecord,
@@ -233,6 +323,8 @@ async def _apply_agency_change(
         return None
 
     if body.agencyId is None:
+        if row.agency_id is not None:
+            await _record_agency_reject_log(db, row, row.agency_id, None)
         row.agency_id = None
         row.status = STATUS_PENDING_CONFIRM
         return None
@@ -244,6 +336,8 @@ async def _apply_agency_change(
     if agency_err:
         return agency_err
 
+    if row.agency_id is not None:
+        await _record_agency_reject_log(db, row, row.agency_id, body.agencyId)
     row.agency_id = body.agencyId
     row.status = STATUS_PENDING_CONFIRM
     await _notify_agency_case_event(row, "assigned")
@@ -265,6 +359,9 @@ def _build_case_activity(row: CaseRecord, agency_name: Optional[str]) -> Dict[st
         activity_type = "warning"
     elif int(row.status) == STATUS_APPRAISING:
         content = f"案件 {report_no} 已由 [{agency_label}] 提交鉴定视频，鉴定中"
+        activity_type = "warning"
+    elif int(row.status) == STATUS_REPORT_PENDING_AUDIT:
+        content = f"案件 {report_no} 已由 [{agency_label}] 提交鉴定报告，待平台审核"
         activity_type = "warning"
     elif int(row.status) == STATUS_REWORK:
         remark = (row.rework_remark or "待补充材料").strip()
@@ -299,7 +396,7 @@ async def case_stats(
     status_stmt = select(CaseRecord.status, func.count(CaseRecord.id)).where(*where_criteria).group_by(CaseRecord.status)
     status_rows = (await db.execute(status_stmt)).all()
 
-    status_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    status_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
     total_count = 0
     for r in status_rows:
         st = int(r[0])
@@ -312,6 +409,7 @@ async def case_stats(
         {"name": CASE_STATUS_LABELS[STATUS_PENDING_CONFIRM], "value": status_counts[STATUS_PENDING_CONFIRM]},
         {"name": CASE_STATUS_LABELS[STATUS_ACCEPTED], "value": status_counts[STATUS_ACCEPTED]},
         {"name": CASE_STATUS_LABELS[STATUS_APPRAISING], "value": status_counts[STATUS_APPRAISING]},
+        {"name": CASE_STATUS_LABELS[STATUS_REPORT_PENDING_AUDIT], "value": status_counts[STATUS_REPORT_PENDING_AUDIT]},
         {"name": CASE_STATUS_LABELS[STATUS_COMPLETED], "value": status_counts[STATUS_COMPLETED]},
         {"name": CASE_STATUS_LABELS[STATUS_REWORK], "value": status_counts[STATUS_REWORK]},
     ]
@@ -418,7 +516,8 @@ async def case_stats(
             "total": total_count,
             "pending": status_counts[STATUS_PENDING_CONFIRM],
             "accepted": status_counts[STATUS_ACCEPTED],
-            "inProgress": status_counts[STATUS_APPRAISING],
+            "inProgress": status_counts[STATUS_APPRAISING] + status_counts[STATUS_REPORT_PENDING_AUDIT],
+            "reportPendingAudit": status_counts[STATUS_REPORT_PENDING_AUDIT],
             "completed": status_counts[STATUS_COMPLETED],
             "rework": status_counts[STATUS_REWORK],
             "agencyCount": agency_count,
@@ -438,7 +537,8 @@ async def case_list(
     pageSize: int = Query(10, ge=1, le=200, description="每页条数"),
     reportNumber: Optional[str] = Query(None, description="出险报案号模糊搜索"),
     victimName: Optional[str] = Query(None, description="伤者姓名模糊搜索"),
-    status: Optional[int] = Query(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回"),
+    status: Optional[int] = Query(None, description=_CASE_STATUS_QUERY_DESC),
+    excludeStatus: Optional[int] = Query(None, description="排除的案件状态（如 6 报告待平台审核）"),
     insuranceCompany: Optional[str] = Query(None, description="所属保险公司（模糊搜索）"),
     agencyId: Optional[int] = Query(None, description="鉴定机构ID（精确匹配）"),
     reportDateStart: Optional[date] = Query(None, description="报案日期起（含）"),
@@ -463,6 +563,7 @@ async def case_list(
         report_number=reportNumber,
         victim_name=victimName,
         status=status,
+        exclude_status=excludeStatus,
         insurance_company=insuranceCompany,
         agency_id=agencyId,
         report_date_start=reportDateStart,
@@ -490,10 +591,21 @@ async def case_list(
     stmt = _apply_case_list_order(stmt, is_agency=forced_agency_id is not None, status_filter=status)
     stmt = stmt.offset((pageNum - 1) * pageSize).limit(pageSize)
     rows = (await db.execute(stmt)).all()
+    cases = [r[0] for r in rows]
+    overlays = await _load_sanitized_case_overlays(db, ctx, cases, for_detail=False)
     return make_response(
         200,
         data={
-            "list": [case_record_row(r[0], r[1], ctx) for r in rows],
+            "list": [
+                case_record_row(
+                    r[0],
+                    r[1],
+                    ctx,
+                    doc_overlay=overlays.get(int(r[0].id)),
+                    include_certificate=False,
+                )
+                for r in rows
+            ],
             "pageNum": pageNum,
             "pageSize": pageSize,
             "total": total,
@@ -525,6 +637,7 @@ async def case_export(
         report_number=query_body.reportNumber,
         victim_name=query_body.victimName,
         status=query_body.status,
+        exclude_status=query_body.excludeStatus,
         insurance_company=query_body.insuranceCompany,
         agency_id=agency_id,
         report_date_start=query_body.reportDateStart,
@@ -548,6 +661,8 @@ async def case_export(
 
     stmt = stmt.order_by(CaseRecord.id.desc()).limit(10000)
     rows_db = (await db.execute(stmt)).all()
+    cases = [r[0] for r in rows_db]
+    overlays = await _load_sanitized_case_overlays(db, ctx, cases, for_detail=False)
 
     def _get_status_text(st: int) -> str:
         return CASE_STATUS_LABELS.get(int(st), "未知")
@@ -556,7 +671,13 @@ async def case_export(
     for r in rows_db:
         case = r[0]
         agency_name = r[1]
-        row_data = case_record_row(case, agency_name, ctx)
+        row_data = case_record_row(
+            case,
+            agency_name,
+            ctx,
+            doc_overlay=overlays.get(int(case.id)),
+            include_certificate=False,
+        )
         rows_data.append(
             {
                 "出险报案号": case.report_number,
@@ -569,7 +690,7 @@ async def case_export(
                 "所属保险公司": case.insurance_company,
                 "案件状态": _get_status_text(case.status),
                 "鉴定机构": agency_name or "",
-                "鉴定文书编号": case.document_number or "",
+                "鉴定文书编号": row_data.get("documentNumber") or "",
                 "理赔金额": float(case.appraisal_amount) if case.appraisal_amount else "",
                 "鉴定结论": case.appraisal_conclusion or "",
                 "创建时间": case.created_at.strftime("%Y-%m-%d %H:%M:%S") if case.created_at else "",
@@ -607,6 +728,84 @@ async def case_export(
     )
 
 
+@router.get("/application/mine", dependencies=[Depends(require_permission("case:add"))])
+async def application_mine(
+    db: AsyncSession = Depends(get_async_db),
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+) -> Dict[str, Any]:
+    ctx = await require_user_with_data_perm(db, x_access_token)
+    if not ctx:
+        return make_response(401, data={}, msg="登录过期，请重新登录")
+
+    user_id = ctx_user_id.get()
+    if not user_id:
+        return make_response(500, data={}, msg="用户身份无效")
+
+    user_phone = (await db.scalars(select(SysUser.phone).where(SysUser.id == user_id))).first()
+    items = await list_my_applications(
+        db,
+        int(user_id),
+        legacy_phone=str(user_phone).strip() if user_phone else None,
+    )
+    return make_response(200, data={"list": items}, msg="success")
+
+
+@router.get("/application/{application_id}", dependencies=[Depends(require_permission("case:add"))])
+async def application_detail(
+    application_id: Union[str, int],
+    db: AsyncSession = Depends(get_async_db),
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+) -> Dict[str, Any]:
+    ctx = await require_user_with_data_perm(db, x_access_token)
+    if not ctx:
+        return make_response(401, data={}, msg="登录过期，请重新登录")
+
+    parsed_id = _parse_case_id(application_id)
+    if parsed_id is None:
+        return make_response(500, data={}, msg="申请单 ID 无效")
+
+    app = await db.get(BizCaseApplication, parsed_id)
+    if app is None:
+        return make_response(500, data={}, msg="申请单不存在")
+
+    user_id = ctx_user_id.get()
+    if user_id and app.created_by not in (None, user_id) and not ctx.get("is_superuser"):
+        return make_response(403, data={}, msg="无权访问该申请单")
+    if app.created_by is None and user_id:
+        user_phone = (await db.scalars(select(SysUser.phone).where(SysUser.id == user_id))).first()
+        if not user_phone or app.victim_phone != str(user_phone).strip():
+            if not ctx.get("is_superuser"):
+                return make_response(403, data={}, msg="无权访问该申请单")
+
+    data = await build_application_detail(db, parsed_id)
+    if data is None:
+        return make_response(500, data={}, msg="申请单不存在")
+    return make_response(200, data=data, msg="success")
+
+
+@router.post("/application/{application_id}/resubmit", dependencies=[Depends(require_permission("case:add"))])
+async def application_resubmit(
+    application_id: Union[str, int],
+    body: CaseSubmitResubmitBody,
+    db: AsyncSession = Depends(get_async_db),
+    x_access_token: Optional[str] = Header(default=None, alias="x-access-token"),
+) -> Dict[str, Any]:
+    ctx = await require_user_with_data_perm(db, x_access_token)
+    if not ctx:
+        return make_response(401, data={}, msg="登录过期，请重新登录")
+
+    parsed_id = _parse_case_id(application_id)
+    if parsed_id is None:
+        return make_response(500, data={}, msg="申请单 ID 无效")
+
+    payload = body.model_dump(exclude_none=True)
+    payload["bizId"] = parsed_id
+    err = await resubmit_case_submit(db, parsed_id, payload, ctx_user_id.get())
+    if err:
+        return make_response(500, data={}, msg=err)
+    return make_response(200, data={}, msg="补件已提交，请等待平台审核")
+
+
 @router.get("/{case_id}")
 async def case_detail(
     case_id: Union[str, int],
@@ -628,7 +827,21 @@ async def case_detail(
     if row is None:
         return make_response(500, data={}, msg="案件不存在或无权访问")
 
-    return make_response(200, data=case_record_row(row[0], row[1], ctx), msg="success")
+    overlays = await _load_sanitized_case_overlays(db, ctx, [row[0]], for_detail=True)
+    batch_histories = await load_agency_submit_batch_histories(db, [int(row[0].id)])
+    data = case_record_row(
+        row[0],
+        row[1],
+        ctx,
+        doc_overlay=overlays.get(int(row[0].id)),
+        include_certificate=True,
+    )
+    data["agencySubmitBatchHistory"] = batch_histories.get(int(row[0].id), [])
+    return make_response(
+        200,
+        data=data,
+        msg="success",
+    )
 
 
 class C端CaseRecordCreate(BaseModel):
@@ -642,6 +855,9 @@ class C端CaseRecordCreate(BaseModel):
     injuryType: str
     insuranceCompany: str
     reportNumber: str
+    policyImages: Optional[List[Dict[str, Any]]] = None
+    accidentDecisionImages: Optional[List[Dict[str, Any]]] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
 
 @router.post("/patient", dependencies=[Depends(require_permission("case:add"))])
 async def case_create_patient(
@@ -680,8 +896,40 @@ async def case_create_patient(
 
     province, city, district = normalize_region(province, city, district)
 
-    # 自动派单逻辑
-    agency_id = await _auto_dispatch_agency(db, province, city, district)
+    if not await is_case_region_enabled(db, province, city, district):
+        return make_response(500, data={}, msg="该地区暂未开放业务，请联系平台管理员")
+
+    if is_audit_first_case_submit():
+        materials = normalize_case_materials(
+            policy_images=body.policyImages,
+            accident_decision_images=body.accidentDecisionImages,
+            attachments=body.attachments,
+        )
+        mat_err = validate_case_materials(materials, require_policy=True)
+        if mat_err:
+            return make_response(500, data={}, msg=mat_err)
+
+        err, _app_id = await create_case_submit_application(
+            db,
+            report_number=report_number,
+            victim_name=victim_name,
+            victim_phone=victim_phone,
+            report_date=body.reportDate,
+            province=province,
+            city=city,
+            district=district,
+            accident_type=accident_type,
+            injury_type=injury_type,
+            insurance_company=insurance_company,
+            created_by=ctx_user_id.get(),
+            materials=materials,
+        )
+        if err:
+            return make_response(500, data={}, msg=err)
+        return make_response(200, data={}, msg="报案已提交，请等待平台审核")
+
+    # legacy：直建案件
+    agency_id = await auto_dispatch_agency(db, province, city, district)
 
     dup_msg = await _ensure_report_number_available(db, report_number)
     if dup_msg:
@@ -717,31 +965,6 @@ async def case_create_patient(
         return make_response(500, data={}, msg="出险报案号已存在")
     return make_response(200, data={}, msg="报案成功")
 
-async def _auto_dispatch_agency(
-    db: AsyncSession,
-    province: str,
-    city: str,
-    district: str,
-) -> Optional[int]:
-    """自动派单逻辑：先同区县，找不到再同市。"""
-    province, city, district = normalize_region(province, city, district)
-    city_variants = city_equivalent_values(province, city)
-
-    def _build_stmt(is_district: bool):
-        stmt = select(AppraisalAgency.id).where(
-            AppraisalAgency.province == province,
-            AppraisalAgency.city.in_(city_variants),
-            AppraisalAgency.status == 1,
-            AppraisalAgency.is_delete == 0,
-        )
-        if is_district:
-            stmt = stmt.where(AppraisalAgency.district == district)
-        return stmt.limit(1)
-
-    agency_id = (await db.scalars(_build_stmt(True))).first()
-    if agency_id is None:
-        agency_id = (await db.scalars(_build_stmt(False))).first()
-    return agency_id
 
 @router.post("", dependencies=[Depends(require_permission("case:add"))])
 async def case_create(
@@ -786,6 +1009,9 @@ async def case_create(
 
     province, city, district = normalize_region(province, city, district)
 
+    if not await is_case_region_enabled(db, province, city, district):
+        return make_response(500, data={}, msg="该地区暂未开放业务，请联系平台管理员")
+
     agency_id = body.agencyId
     if agency_id is not None:
         agency_err = await _validate_active_agency(db, agency_id)
@@ -793,7 +1019,7 @@ async def case_create(
             return make_response(500, data={}, msg=agency_err)
     else:
         # 自动派单逻辑
-        agency_id = await _auto_dispatch_agency(db, province, city, district)
+        agency_id = await auto_dispatch_agency(db, province, city, district)
 
     dup_msg = await _ensure_report_number_available(db, report_number)
     if dup_msg:
@@ -906,6 +1132,8 @@ async def case_update(
 
     if any(x is not None for x in (body.province, body.city, body.district)):
         row.province, row.city, row.district = normalize_region(row.province, row.city, row.district)
+        if not await is_case_region_enabled(db, row.province, row.city, row.district):
+            return make_response(500, data={}, msg="该地区暂未开放业务，请联系平台管理员")
 
     if body.accidentType is not None:
         accident_type = body.accidentType.strip()
@@ -1060,6 +1288,33 @@ async def case_submit_document_number(
 
     now = datetime.utcnow()
     user_id = ctx_user_id.get()
+
+    if is_audit_first_agency_submit():
+        payload = {
+            "caseId": parsed_id,
+            "documentNumber": doc_no,
+            "electronicCertificate": certificate,
+        }
+        try:
+            await create_audit_record(
+                db,
+                biz_type=BIZ_TYPE_AGENCY_SUBMIT,
+                biz_id=parsed_id,
+                submit_payload=payload,
+                created_by=user_id,
+            )
+        except ValueError as exc:
+            await db.rollback()
+            return make_response(500, data={}, msg=str(exc))
+        row.status = STATUS_REPORT_PENDING_AUDIT
+        row.updated_at = now
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return make_response(500, data={}, msg="提交失败：存在并发冲突或重复待审记录")
+        return make_response(200, data={}, msg="文书已提交，等待平台审核")
+
     row.document_number = doc_no
     row.electronic_certificate = certificate
     row.appraisal_submitted_at = now
@@ -1099,6 +1354,9 @@ async def case_rework(
     case.rework_remark = body.remark.strip()
     case.appraisal_videos = None
     case.document_number = None
+    case.electronic_certificate = None
+    case.appraisal_submitted_at = None
+    case.appraisal_submitted_by = None
     case.updated_at = datetime.utcnow()
     await db.commit()
 

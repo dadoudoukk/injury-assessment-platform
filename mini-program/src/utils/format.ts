@@ -6,6 +6,20 @@ export function formatDate(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
+/**
+ * 将后端时间字符串解析为毫秒时间戳，用于排序。
+ * 兼容 `YYYY-MM-DD HH:mm:ss` 与 ISO 8601；解析失败返回 0。
+ */
+export function parseDateTimeToMs(value?: string | null): number {
+  if (!value) return 0
+  const trimmed = value.trim()
+  if (!trimmed) return 0
+
+  const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
+  const ms = Date.parse(normalized)
+  return Number.isFinite(ms) ? ms : 0
+}
+
 /** 拼接省市区 */
 export function formatRegion(province?: string, city?: string, district?: string): string {
   return `${province || ''}${city || ''}${district || ''}`

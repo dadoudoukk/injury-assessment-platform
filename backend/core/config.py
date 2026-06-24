@@ -71,6 +71,30 @@ class Settings(BaseSettings):
         default="",
         description="对外访问根 URL（如 https://api.example.com），用于生成上传文件链接；为空时从请求头推断",
     )
+    audit_agency_submit_mode: str = Field(
+        default="audit_first",
+        description="机构报告提交模式：legacy=直改主表并完成；audit_first=写审核记录+status=6",
+    )
+    audit_case_submit_mode: str = Field(
+        default="audit_first",
+        description="伤者报案模式：legacy=直建案件；audit_first=只写申请单+审核记录",
+    )
+    audit_agency_onboard_mode: str = Field(
+        default="audit_first",
+        description="机构入驻模式：legacy=仅 agency.status；audit_first=agency+audit 同事务",
+    )
+
+
+def is_audit_first_agency_submit() -> bool:
+    return get_settings().audit_agency_submit_mode.strip().lower() == "audit_first"
+
+
+def is_audit_first_case_submit() -> bool:
+    return get_settings().audit_case_submit_mode.strip().lower() == "audit_first"
+
+
+def is_audit_first_agency_onboard() -> bool:
+    return get_settings().audit_agency_onboard_mode.strip().lower() == "audit_first"
 
 
 @lru_cache

@@ -33,7 +33,7 @@ def assign_menus(role_id, menu_names):
 agency_admin_role_id = get_role_id('agency_admin')
 
 if agency_admin_role_id:
-    assign_menus(agency_admin_role_id, ['home_index', 'business', 'caseManage', 'case:edit', 'case:appraisal'])
+    assign_menus(agency_admin_role_id, ['home', 'caseCenter', 'caseManage', 'case:edit', 'case:appraisal'])
 
 conn.commit()
 print("Permissions configured successfully for agency_admin!")

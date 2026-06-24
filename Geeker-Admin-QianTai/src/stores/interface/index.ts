@@ -55,6 +55,8 @@ export interface AuthState {
   authButtonList: {
     [key: string]: string[];
   };
+  /** 扁平权限码（/auth/buttonList），用于跨路由复用同一组件时的 v-auth 回退 */
+  authButtonCodes: string[];
   authMenuList: Menu.MenuOptions[];
 }
 

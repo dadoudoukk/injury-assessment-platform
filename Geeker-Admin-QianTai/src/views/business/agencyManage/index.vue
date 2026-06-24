@@ -1,20 +1,16 @@
 <template>
   <div class="table-box">
-    <ProTable ref="proTable" :columns="columns" :request-api="getTableList" :data-callback="dataCallback">
+    <ProTable
+      ref="proTable"
+      :columns="columns"
+      :request-api="getTableList"
+      :data-callback="dataCallback"
+      :init-param="tableInitParam"
+    >
       <template #tableHeader>
-        <el-button v-auth="'agency:add'" type="primary" :icon="CirclePlus" @click="openAdd">新增机构</el-button>
+        <el-button v-auth="'agency:add'" type="primary" :icon="CirclePlus" @click="openAdd"> 新增机构 </el-button>
       </template>
       <template #operation="scope">
-        <el-button
-          v-if="scope.row.status === 0"
-          v-auth="'agency:audit'"
-          type="success"
-          link
-          :icon="CircleCheck"
-          @click="openAudit(scope.row)"
-        >
-          审核
-        </el-button>
         <el-button v-auth="'agency:edit'" type="primary" link :icon="EditPen" @click="openEdit(scope.row)">编辑</el-button>
         <el-button v-auth="'agency:delete'" type="danger" link :icon="Delete" @click="deleteOne(scope.row)">删除</el-button>
       </template>
@@ -62,41 +58,13 @@
         <el-button type="primary" :loading="submitLoading" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
-
-    <el-dialog v-model="auditDialogVisible" title="审核鉴定机构" width="520px" destroy-on-close @closed="resetAuditForm">
-      <el-form ref="auditFormRef" :model="auditForm" :rules="auditRules" label-width="100px">
-        <el-form-item label="机构名称">
-          <span>{{ auditTargetName }}</span>
-        </el-form-item>
-        <el-form-item label="审核结果" prop="status">
-          <el-radio-group v-model="auditForm.status">
-            <el-radio v-for="item in AGENCY_AUDIT_RESULT_OPTIONS" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="auditForm.status === 3" label="驳回原因" prop="auditRemark">
-          <el-input
-            v-model="auditForm.auditRemark"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入驳回原因"
-            maxlength="255"
-            show-word-limit
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="auditDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="auditSubmitLoading" @click="submitAudit">确定</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="tsx" name="agencyManage">
-import { reactive, ref } from "vue";
-import { CircleCheck, CirclePlus, Delete, EditPen } from "@element-plus/icons-vue";
+import { computed, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { CirclePlus, Delete, EditPen } from "@element-plus/icons-vue";
 import { ElMessage, FormInstance } from "element-plus";
 import type { FormRules } from "element-plus";
 import ProTable from "@/components/ProTable/index.vue";
@@ -104,7 +72,6 @@ import RegionCascader from "@/components/RegionCascader/index.vue";
 import { ColumnProps, ProTableInstance } from "@/components/ProTable/interface";
 import {
   addAgency,
-  auditAgency,
   deleteAgency,
   editAgency,
   getAgencyDetail,
@@ -112,7 +79,7 @@ import {
   type AgencyForm,
   type AgencyRow
 } from "@/api/modules/bizAgency";
-import { AGENCY_AUDIT_RESULT_OPTIONS, AGENCY_STATUS_OPTIONS, agencyStatusMap } from "@/constants/business";
+import { AGENCY_STATUS_OPTIONS, agencyStatusMap } from "@/constants/business";
 import { useHandleData } from "@/hooks/useHandleData";
 import { decodeRegion, encodeRegion, formatRegionText, validateRegion } from "@/utils/region";
 
@@ -124,6 +91,14 @@ import { decodeRegion, encodeRegion, formatRegionText, validateRegion } from "@/
  */
 const CONTACT_PHONE_REGEX = /^(?:1[3-9]\d{9}|(?:0\d{2,3}[-\s]?)?\d{7,8}|\(0\d{2,3}\)\d{7,8})$/;
 
+const route = useRoute();
+const isArchivePage = computed(() => route.name === "agencyManage");
+const isOnboardAuditPage = computed(() => route.name === "agencyOnboardAudit");
+const tableInitParam = computed(() => {
+  if (isArchivePage.value) return { excludeStatus: 0 };
+  return {};
+});
+
 const proTable = ref<ProTableInstance>();
 const dialogVisible = ref(false);
 const isEdit = ref(false);
@@ -131,12 +106,6 @@ const editOriginalStatus = ref<number | null>(null);
 const formRef = ref<FormInstance>();
 const formLoading = ref(false);
 const submitLoading = ref(false);
-
-const auditDialogVisible = ref(false);
-const auditFormRef = ref<FormInstance>();
-const auditSubmitLoading = ref(false);
-const auditTargetId = ref("");
-const auditTargetName = ref("");
 
 const form = reactive({
   id: "",
@@ -148,11 +117,6 @@ const form = reactive({
   district: "",
   regionCascader: [] as string[],
   address: ""
-});
-
-const auditForm = reactive({
-  status: 1 as 1 | 3,
-  auditRemark: ""
 });
 
 const syncRegionToForm = (region: string[]) => {
@@ -175,29 +139,12 @@ const validateContactPhone = (_rule: unknown, value: string, callback: (error?: 
   callback();
 };
 
-const validateAuditRemark = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
-  if (auditForm.status !== 3) {
-    callback();
-    return;
-  }
-  if (!(value || "").trim()) {
-    callback(new Error("请输入驳回原因"));
-    return;
-  }
-  callback();
-};
-
 const rules: FormRules = {
   agencyName: [{ required: true, message: "请输入机构名称", trigger: "blur" }],
   contactPerson: [{ required: true, message: "请输入联系人", trigger: "blur" }],
   contactPhone: [{ required: true, validator: validateContactPhone, trigger: "blur" }],
   regionCascader: [{ required: true, validator: validateRegion, trigger: "change" }],
   address: [{ required: true, message: "请输入详细地址", trigger: "blur" }]
-};
-
-const auditRules: FormRules = {
-  status: [{ required: true, message: "请选择审核结果", trigger: "change" }],
-  auditRemark: [{ validator: validateAuditRemark, trigger: "blur" }]
 };
 
 const onRegionChange = (value: string[]) => {
@@ -236,7 +183,11 @@ const dataCallback = (data: any) => ({
 });
 
 const getTableList = (params: any) => {
-  return getAgencyList(params);
+  const query = { ...params };
+  if (isArchivePage.value && (query.status === undefined || query.status === null || query.status === "")) {
+    query.excludeStatus = 0;
+  }
+  return getAgencyList(query);
 };
 
 const openAdd = () => {
@@ -259,12 +210,6 @@ const openEdit = async (row: AgencyRow) => {
   }
 };
 
-const openAudit = (row: AgencyRow) => {
-  auditTargetId.value = row.id;
-  auditTargetName.value = row.agencyName || "";
-  auditDialogVisible.value = true;
-};
-
 const resetForm = () => {
   form.id = "";
   form.agencyName = "";
@@ -278,14 +223,6 @@ const resetForm = () => {
   editOriginalStatus.value = null;
   isEdit.value = false;
   formRef.value?.clearValidate();
-};
-
-const resetAuditForm = () => {
-  auditTargetId.value = "";
-  auditTargetName.value = "";
-  auditForm.status = 1;
-  auditForm.auditRemark = "";
-  auditFormRef.value?.clearValidate();
 };
 
 const submitForm = () => {
@@ -311,31 +248,12 @@ const submitForm = () => {
   });
 };
 
-const submitAudit = () => {
-  auditFormRef.value?.validate(async valid => {
-    if (!valid) return;
-    auditSubmitLoading.value = true;
-    try {
-      const payload =
-        auditForm.status === 3 ? { status: 3 as const, auditRemark: auditForm.auditRemark.trim() } : { status: 1 as const };
-      const res = await auditAgency(auditTargetId.value, payload);
-      ElMessage.success({ message: res.msg || "审核成功" });
-      auditDialogVisible.value = false;
-      proTable.value?.getTableList();
-    } catch {
-      /* 全局拦截器已提示错误 */
-    } finally {
-      auditSubmitLoading.value = false;
-    }
-  });
-};
-
 const deleteOne = async (row: AgencyRow) => {
   await useHandleData(deleteAgency, row.id, `删除【${row.agencyName}】鉴定机构`);
   proTable.value?.getTableList();
 };
 
-const columns = reactive<ColumnProps<AgencyRow>[]>([
+const columns = computed<ColumnProps<AgencyRow>[]>(() => [
   { type: "index", label: "#", width: 56 },
   {
     prop: "agencyName",
@@ -361,7 +279,7 @@ const columns = reactive<ColumnProps<AgencyRow>[]>([
     prop: "status",
     label: "状态",
     width: 110,
-    search: { el: "select", props: { placeholder: "请选择状态" } },
+    search: isOnboardAuditPage.value ? undefined : { el: "select", props: { placeholder: "请选择状态" } },
     enum: AGENCY_STATUS_OPTIONS,
     render: scope => {
       const item = agencyStatusMap[scope.row.status];
@@ -377,8 +295,15 @@ const columns = reactive<ColumnProps<AgencyRow>[]>([
     render: scope => (scope.row.status === 3 && scope.row.auditRemark ? scope.row.auditRemark : "--")
   },
   { prop: "createdAt", label: "创建时间", width: 170 },
-  { prop: "operation", label: "操作", fixed: "right", width: 220 }
+  { prop: "operation", label: "操作", fixed: "right", width: isOnboardAuditPage.value ? 100 : 220 }
 ]);
+
+watch(
+  () => route.name,
+  () => {
+    proTable.value?.getTableList();
+  }
+);
 </script>
 
 <style scoped lang="scss">

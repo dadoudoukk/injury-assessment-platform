@@ -16,6 +16,31 @@
       </el-col>
     </el-row>
 
+    <!-- 待办提醒卡片 -->
+    <el-row v-if="todoItems.length" :gutter="16" class="todo-group">
+      <el-col :span="24">
+        <el-card shadow="hover" class="todo-section-card">
+          <template #header>
+            <div class="card-header">
+              <span>我的待办</span>
+              <el-badge :value="todoTotal" :max="99" type="danger" />
+            </div>
+          </template>
+          <el-row :gutter="16">
+            <el-col v-for="item in todoItems" :key="item.key" :xs="24" :sm="12" :lg="6">
+              <div class="home-todo-card" @click="goTodo(item)">
+                <div class="home-todo-card__head">
+                  <span class="home-todo-card__title">{{ item.title }}</span>
+                  <el-tag type="danger" size="small">{{ item.count }}</el-tag>
+                </div>
+                <p class="home-todo-card__desc">{{ item.description }}</p>
+              </div>
+            </el-col>
+          </el-row>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 中部可视化图表 -->
     <el-row :gutter="20" class="chart-group">
       <el-col :xs="24" :lg="12">
@@ -70,9 +95,13 @@
 
 <script setup lang="ts" name="home">
 import { ref, onMounted, onBeforeUnmount, shallowRef, markRaw } from "vue";
+import { useRouter } from "vue-router";
 import { DataLine, Warning, OfficeBuilding, Money } from "@element-plus/icons-vue";
 import * as echarts from "echarts";
 import { getCaseStats, type CaseRecentActivity, type CaseStatsData } from "@/api/modules/bizCase";
+import { getWorkbenchTodos, type WorkbenchTodoItem } from "@/api/modules/bizHome";
+
+const router = useRouter();
 
 interface PanelData {
   title: string;
@@ -89,6 +118,8 @@ interface Activity extends CaseRecentActivity {
 }
 
 const loading = ref(false);
+const todoItems = ref<WorkbenchTodoItem[]>([]);
+const todoTotal = ref(0);
 const panelData = ref<PanelData[]>([
   {
     title: "累计案件总数",
@@ -301,13 +332,30 @@ const fetchDashboardData = async () => {
   }
 };
 
+const fetchTodos = async () => {
+  try {
+    const res = await getWorkbenchTodos();
+    todoItems.value = res.data?.items || [];
+    todoTotal.value = res.data?.total || 0;
+  } catch (error) {
+    console.error("获取首页待办失败", error);
+  }
+};
+
+const goTodo = (item: WorkbenchTodoItem) => {
+  router.push({
+    path: item.path,
+    query: item.query || {}
+  });
+};
+
 const resizeChart = () => {
   lineChart.value?.resize();
   pieChart.value?.resize();
 };
 
 onMounted(async () => {
-  await fetchDashboardData();
+  await Promise.all([fetchDashboardData(), fetchTodos()]);
   window.addEventListener("resize", resizeChart);
 });
 
@@ -363,6 +411,59 @@ onBeforeUnmount(() => {
           font-size: 48px;
           opacity: 0.8;
         }
+      }
+    }
+  }
+
+  .todo-group {
+    margin-bottom: 20px;
+
+    .todo-section-card {
+      border-radius: 8px;
+      border: none;
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 16px;
+        font-weight: bold;
+      }
+    }
+
+    .home-todo-card {
+      margin-bottom: 12px;
+      padding: 14px 16px;
+      border: 1px solid var(--el-border-color-lighter);
+      border-radius: 8px;
+      cursor: pointer;
+      transition:
+        border-color 0.15s ease,
+        box-shadow 0.15s ease;
+
+      &:hover {
+        border-color: var(--el-color-primary-light-5);
+        box-shadow: 0 2px 8px rgba(64, 158, 255, 0.12);
+      }
+
+      &__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+
+      &__title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--el-text-color-primary);
+      }
+
+      &__desc {
+        margin: 0;
+        font-size: 13px;
+        color: var(--el-text-color-secondary);
+        line-height: 1.5;
       }
     }
   }

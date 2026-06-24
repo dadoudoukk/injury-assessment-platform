@@ -102,6 +102,37 @@
           :error="fieldErrors.insuranceCompany"
         />
       </FormSection>
+
+      <FormSection
+        :title="CASE_FORM_COPY.materialSection"
+        :description="CASE_FORM_COPY.materialDesc"
+      >
+        <view class="material-block">
+          <text class="material-block__label material-block__label--required">
+            {{ CASE_FORM_COPY.policyLabel }}
+          </text>
+          <text class="material-block__hint">{{ CASE_FORM_COPY.policyHint }}</text>
+          <ImageThumbGrid
+            :files="policyImages"
+            :max-count="MAX_MATERIAL_COUNT"
+            :add-text="CASE_FORM_COPY.addImage"
+            @add="addPolicyImage"
+            @remove="removePolicyImage"
+          />
+        </view>
+
+        <view class="material-block">
+          <text class="material-block__label">{{ CASE_FORM_COPY.accidentDecisionLabel }}</text>
+          <text class="material-block__hint">{{ CASE_FORM_COPY.accidentDecisionHint }}</text>
+          <ImageThumbGrid
+            :files="accidentDecisionImages"
+            :max-count="MAX_MATERIAL_COUNT"
+            :add-text="CASE_FORM_COPY.addImage"
+            @add="addAccidentImage"
+            @remove="removeAccidentImage"
+          />
+        </view>
+      </FormSection>
     </view>
 
     <view class="case-create-page__spacer" />
@@ -121,18 +152,26 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { createPatientCase } from '@/api/case'
 import PageHeader from '@/components/common/PageHeader.vue'
+import ImageThumbGrid from '@/components/upload/ImageThumbGrid.vue'
 import FormField from '@/components/form/FormField.vue'
 import FormSection from '@/components/form/FormSection.vue'
 import SubmitBar from '@/components/form/SubmitBar.vue'
 import { useCaseDict } from '@/composables/useCaseDict'
+import { useFileUpload, type UploadedFileItem } from '@/composables/useFileUpload'
 import { CASE_FORM_COPY, FEEDBACK_COPY } from '@/constants/copy'
 import type { CaseCreateBody } from '@/types/case'
 import { showError, showSuccess } from '@/utils/feedback'
 import { reportError } from '@/utils/logger'
-import { validateCaseForm } from '@/utils/validators'
+import { buildCaseCreatePayload, validateCaseForm, validateCaseMaterials } from '@/utils/validators'
+
+const MAX_MATERIAL_COUNT = 9
 
 const loading = ref(false)
+const policyImages = ref<UploadedFileItem[]>([])
+const accidentDecisionImages = ref<UploadedFileItem[]>([])
 const fieldErrors = reactive<Partial<Record<keyof CaseCreateBody, string>>>({})
+
+const { chooseAndUploadImage } = useFileUpload()
 
 const form = reactive<CaseCreateBody>({
   victimName: '',
@@ -186,6 +225,39 @@ const onInjuryChange = (e: { detail: { value: number } }) => {
   fieldErrors.injuryType = ''
 }
 
+async function addPolicyImage() {
+  if (policyImages.value.length >= MAX_MATERIAL_COUNT) {
+    showError(`保单图片最多 ${MAX_MATERIAL_COUNT} 张`)
+    return
+  }
+  const item = await chooseAndUploadImage()
+  if (item) {
+    policyImages.value.push({ ...item, name: item.name || `保单图片${policyImages.value.length + 1}` })
+  }
+}
+
+function removePolicyImage(index: number) {
+  policyImages.value.splice(index, 1)
+}
+
+async function addAccidentImage() {
+  if (accidentDecisionImages.value.length >= MAX_MATERIAL_COUNT) {
+    showError(`事故认定书最多 ${MAX_MATERIAL_COUNT} 张`)
+    return
+  }
+  const item = await chooseAndUploadImage()
+  if (item) {
+    accidentDecisionImages.value.push({
+      ...item,
+      name: item.name || `事故认定书${accidentDecisionImages.value.length + 1}`,
+    })
+  }
+}
+
+function removeAccidentImage(index: number) {
+  accidentDecisionImages.value.splice(index, 1)
+}
+
 const clearFieldErrors = () => {
   Object.keys(fieldErrors).forEach((key) => {
     delete fieldErrors[key as keyof CaseCreateBody]
@@ -194,7 +266,10 @@ const clearFieldErrors = () => {
 
 const submitForm = async () => {
   clearFieldErrors()
-  const result = validateCaseForm(form)
+  const result = validateCaseForm({
+    ...form,
+    policyImages: policyImages.value,
+  })
   if (!result.valid) {
     if (result.field) {
       fieldErrors[result.field] = result.message
@@ -203,10 +278,21 @@ const submitForm = async () => {
     return
   }
 
+  const materialResult = validateCaseMaterials(policyImages.value, accidentDecisionImages.value)
+  if (!materialResult.valid) {
+    showError(materialResult.message || FEEDBACK_COPY.validationRequired)
+    return
+  }
+
   loading.value = true
   try {
-    await createPatientCase(form)
-    showSuccess(FEEDBACK_COPY.caseCreateSuccess)
+    const payload = buildCaseCreatePayload({
+      ...form,
+      policyImages: policyImages.value,
+      accidentDecisionImages: accidentDecisionImages.value,
+    })
+    await createPatientCase(payload)
+    showSuccess(FEEDBACK_COPY.caseSubmitAuditSuccess)
     setTimeout(() => {
       uni.navigateBack()
       uni.$emit('refreshList')
@@ -264,5 +350,30 @@ picker {
   border-right: 4rpx solid $color-hint;
   transform: rotate(45deg);
   flex-shrink: 0;
+}
+
+.material-block {
+  margin-bottom: $space-lg;
+}
+
+.material-block__label {
+  display: block;
+  font-size: $font-size-body;
+  font-weight: 600;
+  color: $color-title;
+  margin-bottom: $space-xs;
+}
+
+.material-block__label--required::before {
+  content: '*';
+  color: $color-error;
+  margin-right: 4rpx;
+}
+
+.material-block__hint {
+  display: block;
+  font-size: $font-size-caption;
+  color: $color-hint;
+  margin-bottom: $space-sm;
 }
 </style>

@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { STORAGE_KEYS } from '@/constants/storage'
+import type { AttachmentKind } from '@/types/case'
 import { BASE_URL, resolveFileUrl } from '@/utils/request'
 import { useUserStore } from '@/store/modules/user'
 
@@ -7,6 +8,7 @@ export interface UploadedFileItem {
   id: string
   name: string
   url: string
+  kind?: AttachmentKind
   localPath?: string
   thumb?: string
   thumbBroken?: boolean
@@ -105,6 +107,7 @@ export function useFileUpload(options: FileUploadOptions = {}) {
       id: itemId,
       name: name || '鉴定视频',
       url,
+      kind: 'file' as const,
       localPath: filePath,
       thumb: thumbPath,
       thumbBroken: false,
@@ -116,6 +119,7 @@ export function useFileUpload(options: FileUploadOptions = {}) {
       id: `pdf-${Date.now()}`,
       name: fileName,
       url,
+      kind: 'pdf' as const,
       localPath: filePath,
     }))
   }
@@ -172,6 +176,7 @@ export function useFileUpload(options: FileUploadOptions = {}) {
   function chooseAndUploadVideo(
     currentCount: number,
     maxCount = options.maxCount ?? 9,
+    sourceType: Array<'album' | 'camera'> = ['camera'],
   ): Promise<UploadedFileItem | null> {
     const remain = maxCount - currentCount
     if (remain <= 0) {
@@ -183,7 +188,7 @@ export function useFileUpload(options: FileUploadOptions = {}) {
       uni.chooseMedia({
         count: 1,
         mediaType: ['video'],
-        sourceType: ['album', 'camera'],
+        sourceType,
         maxDuration: 300,
         success: async (res) => {
           const file = res.tempFiles[0]
@@ -203,7 +208,10 @@ export function useFileUpload(options: FileUploadOptions = {}) {
             resolve(null)
           }
         },
-        fail: () => resolve(null),
+        fail: () => {
+          uni.showToast({ title: '无法打开相机，请检查权限后重试', icon: 'none' })
+          resolve(null)
+        },
       })
     })
   }
@@ -232,11 +240,65 @@ export function useFileUpload(options: FileUploadOptions = {}) {
     })
   }
 
+  function uploadImage(filePath: string, name?: string): Promise<UploadedFileItem> {
+    return uploadFile(filePath, '/file/upload/img').then((url) => ({
+      id: `img-${Date.now()}`,
+      name: name || '图片附件',
+      url,
+      kind: 'image' as const,
+      localPath: filePath,
+    }))
+  }
+
+  function chooseAndUploadImage(): Promise<UploadedFileItem | null> {
+    return new Promise((resolve) => {
+      uni.chooseImage({
+        count: 1,
+        sizeType: ['compressed'],
+        sourceType: ['album', 'camera'],
+        success: async (res) => {
+          const filePath = res.tempFilePaths?.[0]
+          if (!filePath) {
+            resolve(null)
+            return
+          }
+          try {
+            const item = await uploadImage(filePath, '图片附件')
+            uni.showToast({ title: '上传成功', icon: 'none' })
+            resolve(item)
+          } catch {
+            resolve(null)
+          }
+        },
+        fail: () => resolve(null),
+      })
+    })
+  }
+
+  function chooseAndUploadAttachment(): Promise<UploadedFileItem | null> {
+    return new Promise((resolve) => {
+      uni.showActionSheet({
+        itemList: ['拍照/相册图片', 'PDF 文件'],
+        success: async (res) => {
+          if (res.tapIndex === 0) {
+            resolve(await chooseAndUploadImage())
+          } else {
+            resolve(await chooseAndUploadPdf())
+          }
+        },
+        fail: () => resolve(null),
+      })
+    })
+  }
+
   return {
     isUploading,
     uploadVideo,
     uploadPdf,
+    uploadImage,
     chooseAndUploadVideo,
     chooseAndUploadPdf,
+    chooseAndUploadImage,
+    chooseAndUploadAttachment,
   }
 }

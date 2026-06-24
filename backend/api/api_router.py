@@ -3,10 +3,13 @@ from fastapi import APIRouter
 from api.routers import (
     auth,
     biz_agency,
+    biz_audit,
     biz_case,
     biz_fragment,
+    biz_home,
     biz_insurance,
     biz_news,
+    biz_region,
     dict_data,
     dict_type,
     menu,
@@ -27,7 +30,10 @@ router.include_router(dict_type.router)
 router.include_router(dict_data.router)
 router.include_router(biz_news.router)
 router.include_router(biz_case.router)
+router.include_router(biz_home.router)
+router.include_router(biz_audit.router)
 router.include_router(biz_agency.router)
+router.include_router(biz_region.router)
 router.include_router(biz_insurance.router)
 router.include_router(biz_fragment.router)
 router.include_router(sys_log.router)

@@ -98,6 +98,12 @@
           系统正在匹配机构，请耐心等待。
         </text>
       </template>
+      <template v-else-if="isPatientReportPendingAudit(item.status)">
+        <text class="case-card__hint-title">进度提示</text>
+        <text class="case-card__hint-content case-card__hint-content--muted">
+          鉴定报告已提交，正在等待平台审核。
+        </text>
+      </template>
       <template v-else-if="isPatientRework(item.status)">
         <text class="case-card__hint-title">进度提示</text>
         <text class="case-card__hint-content case-card__hint-content--danger">
@@ -144,6 +150,7 @@ import {
   isPatientInAppraisalFlow,
   isPatientMatching,
   isPatientReportCompleted,
+  isPatientReportPendingAudit,
   isPatientRework,
   shouldShowPatientAgencyInfo,
 } from '@/constants/status'

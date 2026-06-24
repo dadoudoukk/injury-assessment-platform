@@ -14,6 +14,8 @@ export const FEEDBACK_COPY = {
   submitSuccess: '提交成功',
   acceptSuccess: '已确认受理',
   caseCreateSuccess: '报案成功！',
+  caseSubmitAuditSuccess: '报案已提交，请等待平台审核',
+  resubmitSuccess: '补件已提交，请等待平台审核',
   passwordSetSuccess: '设置成功',
   passwordChangeSuccess: '密码已更新，请重新登录',
   passwordChangeTitle: '修改成功',
@@ -57,9 +59,11 @@ export const PASSWORD_COPY = {
 /** 空状态预设文案 */
 export const EMPTY_STATE_COPY = {
   defaultTitle: '暂无数据',
-  patientListTitle: '暂无理赔案件',
+  patientListTitle: '暂无报案记录',
   patientListDesc: '您还没有提交过报案，可点击下方按钮快速报案',
   patientListAction: '快速报案',
+  applicationNotFoundTitle: '申请不存在',
+  applicationNotFoundDesc: '该申请可能已被删除或您暂无查看权限',
   agencyListTitle: '暂无相关案件卷宗',
   agencyListDesc: '当前筛选条件下没有案件，可切换其他状态查看',
   loadErrorTitle: '加载失败',
@@ -112,8 +116,55 @@ export const CASE_FORM_COPY = {
   accidentDesc: '请准确填写出险时间、地点及事故类型',
   insuranceSection: '保险信息',
   insuranceDesc: '请填写与保单一致的报案号及承保公司',
+  materialSection: '案件材料',
+  materialDesc: '请上传保单图片（必填）及事故认定书（选填）',
+  policyLabel: '保单图片',
+  policyHint: '至少 1 张，仅支持图片',
+  accidentDecisionLabel: '事故认定书',
+  accidentDecisionHint: '选填，仅支持图片',
+  addImage: '添加图片',
   submit: '提交报案',
-  submitHint: '提交后可在案件列表查看进度',
+  submitHint: '提交后可在我的报案查看进度',
+} as const
+
+/** 伤者申请单（审核前） */
+export const APPLICATION_COPY = {
+  detailTitle: '报案申请详情',
+  resubmitTitle: '补件再提交',
+  resubmitSubtitle: '请根据驳回原因修改可编辑项，锚点信息不可更改',
+  lockedSection: '不可修改信息',
+  lockedDesc: '以下信息为业务锚点，驳回后不可在线修改',
+  editableSection: '可修改信息',
+  attachmentSection: '附件材料',
+  attachmentDesc: '历史材料只读展示；本批次可按类别追加新材料',
+  attachmentHistory: '历史材料',
+  policyHistory: '历史保单',
+  accidentHistory: '历史事故认定书',
+  policyNew: '本次新增保单',
+  accidentNew: '本次新增事故认定书',
+  batchHistoryDesc: '按提交批次查看材料与审核结果',
+  attachmentNew: '本批次新增',
+  addAttachment: '添加附件',
+  addPolicyImage: '添加保单图片',
+  addAccidentImage: '添加事故认定书',
+  resubmit: '提交补件',
+  resubmitHint: '提交后将进入平台审核',
+  pendingHint: '平台正在审核您的报案申请，请耐心等待。',
+  rejectedHint: '申请已被驳回，请查看原因后补件提交。',
+  approvedHint: '申请已通过审核，可查看关联案件进度。',
+  viewCase: '查看案件进度',
+  goResubmit: '去补件',
+  rejectReason: '驳回原因',
+} as const
+
+/** 机构案件详情 */
+export const AGENCY_DETAIL_COPY = {
+  videoCameraOnlyHint: '仅支持现场拍摄上传',
+  documentRejectHint: '请根据平台驳回原因重新提交完整文书包',
+  reportPendingHint: '文书已提交，正在等待平台审核，请耐心等待。',
+  agencySubmitHistory: '机构提交历史',
+  batchDocumentNumber: '文书编号',
+  batchCertificate: '电子证书',
 } as const
 
 /** 个人中心 */

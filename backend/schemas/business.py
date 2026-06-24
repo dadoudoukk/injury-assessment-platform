@@ -141,7 +141,8 @@ class CaseRecordListQuery(BaseModel):
     pageSize: int = Field(10, ge=1, le=200, description="每页条数")
     reportNumber: Optional[str] = Field(None, description="出险报案号模糊搜索")
     victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
-    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
+    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回 6报告待平台审核")
+    excludeStatus: Optional[int] = Field(None, description="排除的案件状态（案件中心默认排除 6 报告待平台审核）")
     insuranceCompany: Optional[str] = Field(None, description="所属保险公司（模糊搜索，中文名称）")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID（精确匹配）")
     reportDateStart: Optional[date] = Field(None, description="报案日期起（含）")
@@ -151,7 +152,8 @@ class CaseRecordListQuery(BaseModel):
 class CaseRecordExportQuery(BaseModel):
     reportNumber: Optional[str] = Field(None, description="出险报案号模糊搜索")
     victimName: Optional[str] = Field(None, description="伤者姓名模糊搜索")
-    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
+    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回 6报告待平台审核")
+    excludeStatus: Optional[int] = Field(None, description="排除的案件状态")
     insuranceCompany: Optional[str] = Field(None, description="所属保险公司（模糊搜索，中文名称）")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID（精确匹配）")
     reportDateStart: Optional[date] = Field(None, description="报案日期起（含）")
@@ -169,7 +171,7 @@ class CaseRecordCreate(BaseModel):
     accidentType: str = Field(..., min_length=1, max_length=50, description="事故类型")
     injuryType: str = Field(..., min_length=1, max_length=50, description="伤情类型")
     insuranceCompany: str = Field(..., min_length=1, max_length=100, description="所属保险公司")
-    status: int = Field(1, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
+    status: int = Field(1, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回 6报告待平台审核")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID")
 
 
@@ -184,7 +186,7 @@ class CaseRecordUpdate(BaseModel):
     accidentType: Optional[str] = Field(None, min_length=1, max_length=50, description="事故类型")
     injuryType: Optional[str] = Field(None, min_length=1, max_length=50, description="伤情类型")
     insuranceCompany: Optional[str] = Field(None, min_length=1, max_length=100, description="所属保险公司")
-    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回")
+    status: Optional[int] = Field(None, description="案件状态：1待确认 2已受理 3鉴定中 4已完成 5已打回 6报告待平台审核")
     agencyId: Optional[int] = Field(None, description="鉴定机构ID")
 
 
@@ -295,6 +297,65 @@ class AppraisalAgencyOut(BaseModel):
     address: str
     status: int
     auditRemark: Optional[str] = None
+    createdAt: str
+    updatedAt: str
+
+
+class AgencyServiceScopeListQuery(BaseModel):
+    pageNum: int = Field(1, ge=1, description="当前页码")
+    pageSize: int = Field(10, ge=1, le=200, description="每页条数")
+    agencyId: Optional[int] = Field(None, description="机构 ID")
+
+
+class AgencyServiceScopeCreate(BaseModel):
+    agencyId: int = Field(..., description="机构 ID")
+    province: str = Field(..., min_length=1, max_length=50, description="省")
+    city: str = Field("", max_length=50, description="市（空=全省）")
+    district: str = Field("", max_length=50, description="区县（空=全市）")
+
+
+class AgencyServiceScopeOut(BaseModel):
+    id: str
+    agencyId: int
+    agencyName: str
+    province: str
+    city: str
+    district: str
+    regionText: str
+    createdAt: str
+
+
+class RegionConfigListQuery(BaseModel):
+    pageNum: int = Field(1, ge=1, description="当前页码")
+    pageSize: int = Field(10, ge=1, le=200, description="每页条数")
+    province: Optional[str] = Field(None, description="省")
+    enabled: Optional[int] = Field(None, description="1启用 0停用")
+
+
+class RegionConfigCreate(BaseModel):
+    province: str = Field(..., min_length=1, max_length=50, description="省")
+    city: str = Field("", max_length=50, description="市（空=全省）")
+    district: str = Field("", max_length=50, description="区县（空=全市）")
+    enabled: int = Field(1, description="1启用 0停用")
+    sort: int = Field(0, description="排序")
+    remark: Optional[str] = Field(None, max_length=255, description="备注")
+
+
+class RegionConfigUpdate(BaseModel):
+    enabled: Optional[int] = Field(None, description="1启用 0停用")
+    sort: Optional[int] = Field(None, description="排序")
+    remark: Optional[str] = Field(None, max_length=255, description="备注")
+
+
+class RegionConfigOut(BaseModel):
+    id: str
+    province: str
+    city: str
+    district: str
+    regionText: str
+    enabled: int
+    sort: int
+    remark: Optional[str] = None
     createdAt: str
     updatedAt: str
 
